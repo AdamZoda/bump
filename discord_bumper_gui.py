@@ -5,6 +5,7 @@ import threading
 import queue
 import urllib.request
 import json
+import hashlib
 import tkinter as tk
 from tkinter import messagebox
 from tkinter import ttk
@@ -27,8 +28,7 @@ except ImportError:
 # ==========================================
 # CONFIGURATION SECURITE & MISES A JOUR
 # ==========================================
-# Vous pouvez héberger un fichier JSON sur un serveur public (ex: GitHub Gist, Pastebin)
-# Contenu du JSON attendu :
+# JSON attendu :
 # {
 #   "blocked": false,
 #   "version": "1.0.0",
@@ -37,12 +37,13 @@ except ImportError:
 # }
 CHECK_URL = "https://raw.githubusercontent.com/adamm-git/bump-config/main/config.json"
 CURRENT_VERSION = "1.0.0"
+PASSWORD_HASH = "15b1335b7194f57c66914b14d23253b26c7104d445cc35552b7b51b272f2d9f3" # sha256 of "bump"
 
 class DiscordBumperApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Bumper Multi-Bot - Control Panel")
-        self.root.geometry("640x510")  # Default compact geometry
+        self.root.geometry("400x120")  # Compact geometry for the loading splash
         self.root.configure(bg="#313338")  # Discord Dark Theme background
         self.root.resizable(False, False)
         
@@ -59,34 +60,10 @@ class DiscordBumperApp:
         self.logo_png_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logo-V2.png")
         
         self.setup_styles()
-        self.create_widgets()
+        self.create_loading_widgets()
         
-        # Convert logo PNG to ICO on first run if missing
-        if not os.path.exists(self.logo_ico_path) and os.path.exists(self.logo_png_path):
-            self.convert_png_to_ico(self.logo_png_path, self.logo_ico_path)
-            
-        # Set Window Title Icon
-        if os.path.exists(self.logo_ico_path):
-            try:
-                self.root.iconbitmap(self.logo_ico_path)
-            except Exception:
-                pass
-                
-        # Create Desktop Shortcut
-        self.check_and_create_shortcut()
-        
-        # Start checking the queue for log messages
-        self.root.after(100, self.process_log_queue)
-        
-        # Check updates and block switch
+        # Start checking updates
         self.check_updates_and_status()
-        
-        # Get the HWND after root has loaded
-        self.root.update_idletasks()
-        try:
-            self.my_hwnd = self.root.winfo_id()
-        except Exception:
-            pass
 
     def setup_styles(self):
         # Color scheme inspired by Discord Dark Mode
@@ -100,7 +77,159 @@ class DiscordBumperApp:
         self.green_color = "#2ecc71"    # Success green
         self.red_color = "#e74c3c"      # Error red
         self.yellow_color = "#f1c40f"   # Warning yellow
+
+    def create_loading_widgets(self):
+        self.loading_frame = tk.Frame(self.root, bg=self.bg_color)
+        self.loading_frame.pack(fill="both", expand=True)
         
+        self.loading_label = tk.Label(
+            self.loading_frame,
+            text="Vérification de la licence...",
+            font=("Segoe UI", 11, "bold"),
+            bg=self.bg_color,
+            fg=self.text_color
+        )
+        self.loading_label.pack(expand=True)
+
+    def show_login_screen(self):
+        if hasattr(self, "loading_frame") and self.loading_frame:
+            self.loading_frame.destroy()
+            
+        self.root.geometry("420x260")
+        
+        self.login_frame = tk.Frame(self.root, bg=self.bg_color)
+        self.login_frame.pack(fill="both", expand=True)
+        
+        login_header = tk.Frame(self.login_frame, bg=self.bg_color, pady=15)
+        login_header.pack(fill="x")
+        
+        # Load logo for login header
+        if os.path.exists(self.logo_png_path):
+            try:
+                pil_img = Image.open(self.logo_png_path)
+                aspect_ratio = pil_img.width / pil_img.height
+                target_width = int(40 * aspect_ratio)
+                self.login_logo_image = ImageTk.PhotoImage(pil_img.resize((target_width, 40), Image.Resampling.LANCZOS))
+                
+                logo_label = tk.Label(login_header, image=self.login_logo_image, bg=self.bg_color)
+                logo_label.pack(side="left", padx=(40, 10))
+            except Exception:
+                pass
+                
+        title_frame = tk.Frame(login_header, bg=self.bg_color)
+        title_frame.pack(side="left")
+        
+        tk.Label(
+            title_frame, 
+            text="BUMPER MULTI-BOT", 
+            font=("Segoe UI", 12, "bold"), 
+            bg=self.bg_color, 
+            fg=self.white_color
+        ).pack(anchor="w")
+        
+        tk.Label(
+            title_frame, 
+            text="Authentification requise", 
+            font=("Segoe UI", 8, "italic"), 
+            bg=self.bg_color, 
+            fg="#949ba4"
+        ).pack(anchor="w")
+        
+        # Form Container
+        form_card = tk.Frame(self.login_frame, bg=self.card_color, bd=0, highlightbackground="#232428", highlightthickness=1)
+        form_card.pack(fill="both", expand=True, padx=25, pady=(0, 20))
+        
+        tk.Label(
+            form_card, 
+            text="Mot de passe :", 
+            font=("Segoe UI", 10, "bold"), 
+            bg=self.card_color, 
+            fg=self.text_color
+        ).pack(anchor="w", padx=15, pady=(15, 2))
+        
+        self.password_var = tk.StringVar()
+        self.password_entry = tk.Entry(
+            form_card, 
+            textvariable=self.password_var,
+            show="*", 
+            font=("Segoe UI", 11), 
+            bg=self.input_bg, 
+            fg=self.white_color, 
+            insertbackground=self.white_color,
+            bd=0, 
+            highlightthickness=1, 
+            highlightbackground="#1e1f22", 
+            highlightcolor=self.blurple_color
+        )
+        self.password_entry.pack(fill="x", padx=15, ipady=5)
+        self.password_entry.focus()
+        self.password_entry.bind("<Return>", lambda e: self.validate_password())
+        
+        self.error_label = tk.Label(
+            form_card, 
+            text="", 
+            font=("Segoe UI", 9, "bold"), 
+            bg=self.card_color, 
+            fg=self.red_color
+        )
+        self.error_label.pack(anchor="w", padx=15, pady=(5, 0))
+        
+        submit_btn = tk.Button(
+            form_card, 
+            text="🔑  VALIDER", 
+            font=("Segoe UI", 10, "bold"), 
+            bg=self.blurple_color, 
+            fg=self.white_color, 
+            activebackground=self.blurple_hover, 
+            activeforeground=self.white_color,
+            bd=0, 
+            cursor="hand2", 
+            command=self.validate_password
+        )
+        submit_btn.pack(fill="x", padx=15, pady=(10, 15), ipady=6)
+        submit_btn.bind("<Enter>", lambda e: submit_btn.configure(bg=self.blurple_hover))
+        submit_btn.bind("<Leave>", lambda e: submit_btn.configure(bg=self.blurple_color))
+
+    def validate_password(self):
+        entered_password = self.password_var.get().strip()
+        if not entered_password:
+            self.error_label.config(text="Veuillez saisir un mot de passe.")
+            return
+            
+        entered_hash = hashlib.sha256(entered_password.encode('utf-8')).hexdigest()
+        
+        if entered_hash == PASSWORD_HASH:
+            self.login_frame.destroy()
+            self.root.geometry("640x510")  # Default main panel size
+            self.create_widgets()
+            self.run_logo_and_shortcut_logic()
+        else:
+            self.error_label.config(text="Mot de passe incorrect.")
+            self.password_entry.delete(0, "end")
+            self.password_entry.focus()
+
+    def run_logo_and_shortcut_logic(self):
+        # Convert PNG to ICO
+        if not os.path.exists(self.logo_ico_path) and os.path.exists(self.logo_png_path):
+            self.convert_png_to_ico(self.logo_png_path, self.logo_ico_path)
+            
+        # Set title icon
+        if os.path.exists(self.logo_ico_path):
+            try:
+                self.root.iconbitmap(self.logo_ico_path)
+            except Exception:
+                pass
+                
+        # Create Desktop Shortcut
+        self.check_and_create_shortcut()
+        
+        # Get active HWND
+        self.root.update_idletasks()
+        try:
+            self.my_hwnd = self.root.winfo_id()
+        except Exception:
+            pass
+
     def create_widgets(self):
         # Header Label Frame
         header_frame = tk.Frame(self.root, bg=self.bg_color, pady=10)
@@ -111,8 +240,6 @@ class DiscordBumperApp:
         if os.path.exists(self.logo_png_path):
             try:
                 pil_img = Image.open(self.logo_png_path)
-                
-                # Dynamic width scaling maintaining aspect ratio (target height = 50px)
                 target_height = 50
                 aspect_ratio = pil_img.width / pil_img.height
                 target_width = int(target_height * aspect_ratio)
@@ -225,7 +352,7 @@ class DiscordBumperApp:
             fg=self.text_color,
             activebackground=self.bg_color,
             activeforeground=self.white_color,
-            selectcolor="#1e1f22",  # Dark select box instead of white
+            selectcolor="#1e1f22",
             var=self.show_scheduling_var,
             command=self.toggle_scheduling_panel
         )
@@ -254,7 +381,7 @@ class DiscordBumperApp:
             fg=self.text_color, 
             activebackground=self.bg_color, 
             activeforeground=self.text_color,
-            selectcolor="#1e1f22",  # Dark select box
+            selectcolor="#1e1f22",
             var=self.enable_interval_var,
             command=self.toggle_scheduling_fields
         )
@@ -332,7 +459,7 @@ class DiscordBumperApp:
             fg=self.text_color, 
             activebackground=self.bg_color, 
             activeforeground=self.text_color,
-            selectcolor="#1e1f22",  # Dark select box
+            selectcolor="#1e1f22",
             var=self.enable_daily_var,
             command=self.toggle_scheduling_fields
         )
@@ -391,8 +518,6 @@ class DiscordBumperApp:
             command=self.start_bump_thread
         )
         self.run_btn.grid(row=0, column=0, padx=(0, 10), ipady=8, sticky="we")
-        
-        # Hover animations for start button
         self.run_btn.bind("<Enter>", lambda e: self.run_btn.configure(bg=self.blurple_hover) if self.run_btn["state"] == "normal" else None)
         self.run_btn.bind("<Leave>", lambda e: self.run_btn.configure(bg=self.blurple_color) if self.run_btn["state"] == "normal" else None)
         
@@ -410,8 +535,6 @@ class DiscordBumperApp:
             command=self.stop_automation
         )
         self.stop_btn.grid(row=0, column=1, ipady=8, sticky="we")
-        
-        # Hover animations for stop button
         self.stop_btn.bind("<Enter>", lambda e: self.stop_btn.configure(bg=self.red_color) if self.stop_btn["state"] == "normal" else None)
         self.stop_btn.bind("<Leave>", lambda e: self.stop_btn.configure(bg="#da373c") if self.stop_btn["state"] == "normal" else None)
         
@@ -449,11 +572,8 @@ class DiscordBumperApp:
         self.console.tag_config("error", foreground=self.red_color)
         self.console.tag_config("system", foreground="#949ba4", font=("Consolas", 9, "italic"))
         
-        # Initialize default geometry (hidden panel)
-        self.root.geometry("640x510")
-        
-        # Welcome message
-        self.log("Console initialisée. Prêt à exécuter le bump Discord.", "system")
+        # Log default first messages that were queued
+        self.log("Console initialisée. Licence validée avec succès.", "success")
 
     def log(self, message, msg_type="info"):
         timestamp = time.strftime("[%H:%M:%S] ")
@@ -463,10 +583,12 @@ class DiscordBumperApp:
         while not self.log_queue.empty():
             try:
                 msg, msg_type = self.log_queue.get_nowait()
-                self.console.configure(state="normal")
-                self.console.insert("end", msg, msg_type)
-                self.console.configure(state="disabled")
-                self.console.see("end")  # Scroll to bottom
+                # Check if console widget is initialized
+                if hasattr(self, "console") and self.console:
+                    self.console.configure(state="normal")
+                    self.console.insert("end", msg, msg_type)
+                    self.console.configure(state="disabled")
+                    self.console.see("end")  # Scroll to bottom
             except queue.Empty:
                 break
         self.root.after(100, self.process_log_queue)
@@ -476,10 +598,8 @@ class DiscordBumperApp:
             img = Image.open(png_path)
             icon_sizes = [(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
             img.save(ico_path, format="ICO", sizes=icon_sizes)
-            self.log("✅ Fichier d'icône Windows créé (logo.ico).", "system")
             return True
-        except Exception as e:
-            self.log(f"⚠️ Échec de la création de l'icône ICO : {e}", "warning")
+        except Exception:
             return False
 
     def check_and_create_shortcut(self):
@@ -490,11 +610,7 @@ class DiscordBumperApp:
             desktop = os.path.join(os.path.expanduser("~"), "Desktop")
             shortcut_path = os.path.join(desktop, "Bumper Multi-Bot.lnk")
             
-            # If the shortcut doesn't exist, create it
             if not os.path.exists(shortcut_path):
-                self.log("Création du raccourci sur le Bureau...", "system")
-                
-                # Check for win32com dispatch
                 shell = Dispatch('WScript.Shell')
                 shortcut = shell.CreateShortCut(shortcut_path)
                 
@@ -510,18 +626,18 @@ class DiscordBumperApp:
                     
                 shortcut.Description = "Bumper Discord Multi-Bot"
                 shortcut.save()
-                self.log("✅ Raccourci créé sur le Bureau avec succès !", "success")
-        except Exception as e:
-            self.log(f"⚠️ Impossible de créer le raccourci sur le Bureau : {e}", "warning")
+        except Exception:
+            pass
 
     def check_updates_and_status(self):
-        self.log("Vérification de la licence et des mises à jour...", "system")
+        # We start status check in background thread
         threading.Thread(target=self._run_security_check, daemon=True).start()
 
     def _run_security_check(self):
-        # Bypass silently if using the default placeholder repository URL
+        # Dev bypass if raw url is default
         if not CHECK_URL or CHECK_URL.startswith("https://raw.githubusercontent.com/adamm-git"):
-            self.log("Licence locale active (mode développement).", "success")
+            time.sleep(0.6) # Short delay for smooth loading display
+            self.root.after(0, self.show_login_screen)
             return
             
         try:
@@ -531,27 +647,42 @@ class DiscordBumperApp:
                 
                 # Check block/kill-switch status
                 if data.get("blocked", False):
-                    self.log("❌ CETTE APPLICATION A ÉTÉ DÉSACTIVÉE PAR LE CRÉATEUR.", "error")
                     self.root.after(0, self._handle_blocked_app, data.get("message", "Accès refusé."))
                     return
                 
-                # Check for update
+                # Check for mandatory update
                 latest_version = data.get("version", CURRENT_VERSION)
                 if latest_version != CURRENT_VERSION:
-                    self.log(f"🔔 Nouvelle version disponible : {latest_version} !", "warning")
-                    self.root.after(0, lambda: messagebox.showinfo(
-                        "Mise à jour disponible", 
-                        f"Une nouvelle version ({latest_version}) est disponible.\n\nMessage : {data.get('message', 'Veuillez contacter le créateur.')}"
-                    ))
-                else:
-                    self.log("✅ Application à jour. Licence active.", "success")
+                    update_msg = f"Version {latest_version} obligatoire.\n\nRaison : {data.get('message', 'Mise à jour requise.')}"
+                    self.root.after(0, self._handle_mandatory_update, update_msg)
+                    return
+                
+                # Success -> Load password screen
+                self.root.after(0, self.show_login_screen)
         except Exception as e:
-            self.log(f"⚠️ Impossible de valider la licence à distance : {e}", "warning")
+            error_msg = f"Connexion Internet requise pour vérifier l'authenticité de l'application.\n\nDétails : {e}"
+            self.root.after(0, self._handle_connection_error, error_msg)
 
     def _handle_blocked_app(self, reason):
         messagebox.showerror(
             "Accès Refusé", 
             f"Cette application a été désactivée par son créateur.\n\nRaison : {reason}\n\nFermeture de l'application."
+        )
+        self.root.destroy()
+        sys.exit(0)
+
+    def _handle_mandatory_update(self, msg):
+        messagebox.showerror(
+            "Mise à jour obligatoire", 
+            f"Veuillez télécharger la dernière version pour continuer.\n\n{msg}\n\nL'application va se fermer."
+        )
+        self.root.destroy()
+        sys.exit(0)
+
+    def _handle_connection_error(self, msg):
+        messagebox.showerror(
+            "Erreur de Connexion", 
+            f"Impossible de démarrer l'application sans connexion Internet active.\n\n{msg}\n\nL'application va se fermer."
         )
         self.root.destroy()
         sys.exit(0)
