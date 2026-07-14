@@ -1203,9 +1203,24 @@ class DiscordBumperApp:
                 pyautogui.press("delete")
                 time.sleep(0.1)
                 
-                # Type command slowly
-                self.log(f"🤖 [Bot {bot_num}/{bot_count}] Saisie lente de la commande...", "info")
-                pyautogui.write(command, interval=0.04)
+                # Paste command via clipboard to avoid keyboard layout (AZERTY vs QWERTY) mismatch errors
+                self.log(f"🤖 [Bot {bot_num}/{bot_count}] Copie et collage de la commande...", "info")
+                try:
+                    import pyperclip
+                    # Backup old clipboard
+                    old_clipboard = pyperclip.paste()
+                    # Set command to clipboard
+                    pyperclip.copy(command)
+                    time.sleep(0.1)
+                    # Paste command using Ctrl+V
+                    pyautogui.hotkey("ctrl", "v")
+                    time.sleep(0.2)
+                    # Restore old clipboard
+                    if old_clipboard:
+                        pyperclip.copy(old_clipboard)
+                except Exception as e:
+                    self.log(f"⚠️ Erreur presse-papiers ({e}), repli sur la saisie manuelle...", "warning")
+                    pyautogui.write(command, interval=0.04)
                 
                 # Autocomplete wait (checking for stop_event periodically)
                 self.log(f"🤖 [Bot {bot_num}/{bot_count}] Attente de l'autocomplétion (1.5s)...", "info")
