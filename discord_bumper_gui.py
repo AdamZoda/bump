@@ -37,7 +37,7 @@ except ImportError:
 # }
 CHECK_URL = "https://raw.githubusercontent.com/adamm-git/bump-config/main/config.json"
 CURRENT_VERSION = "1.0.0"
-PASSWORD_HASH = "15b1335b7194f57c66914b14d23253b26c7104d445cc35552b7b51b272f2d9f3" # sha256 of "bump"
+PASSWORD_HASH = "5fbde9bb9c3fd8c224020057695ac4664a3fa134bdcd4f0550e2fad2202a14bf" # sha256 of "bump"
 
 class DiscordBumperApp:
     def __init__(self, root):
