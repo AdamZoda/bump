@@ -677,9 +677,8 @@ class DiscordBumperApp:
         threading.Thread(target=self._run_security_check, daemon=True).start()
 
     def _run_security_check(self):
-        # ⚠️ NO DEV BYPASS — verification is always mandatory
+        # Verification is always mandatory
         if not CHECK_URL:
-            # If CHECK_URL is empty, block access entirely for safety
             self.root.after(0, self._handle_connection_error, "CHECK_URL non configurée.")
             return
 
@@ -703,8 +702,15 @@ class DiscordBumperApp:
                 # 3. All good — show login
                 self.root.after(0, self.show_login_screen)
 
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                # config.json absent du serveur — laisser passer (fichier pas encore déployé)
+                self.root.after(0, self.show_login_screen)
+            else:
+                error_msg = f"Erreur serveur HTTP {e.code}.\nDétails : {e}"
+                self.root.after(0, self._handle_connection_error, error_msg)
         except Exception as e:
-            error_msg = f"Connexion Internet requise.\n\nDétails : {e}"
+            error_msg = f"Connexion Internet requise.\nDétails : {e}"
             self.root.after(0, self._handle_connection_error, error_msg)
 
     def _handle_auto_update(self, new_version, update_url):
