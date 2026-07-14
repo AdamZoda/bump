@@ -1,0 +1,229 @@
+
+   - {"type": "discord_message", "message": "texte ou /commande", "bot_count": 1}
+{"response": "D'accord, je lance la commande /bump sur les 5 premiers bots.", "actions": [{"type": "discord_message", "message": "/bump", "bot_count": 5}]}
+
+
+def _handle_discord_message(self, action):
+        """Envoie un message dans Discord.
+        Méthode robuste avec détection et ciblage de la fenêtre :
+        1. Détecte si c'est une commande slash (ex: /bump) et récupère le bot_count.
+        2. Tente de trouver la fenêtre Discord existante.
+        3. Si trouvée, l'active et clique précisément en son bas-milieu.
+        4. Si non trouvée (ou si impossible d'activer), relance Discord via la commande et attend 4 secondes, puis clique.
+        5. Taper/Coller et envoyer.
+        """
+        message = action.get("message", "").strip()
+        bot_count = int(action.get("bot_count", 1)) # Nombre de bots à bumper (slash commands)
+        if not message:
+            return {"success": False, "message": "Aucun message à envoyer"}
+        if not pyautogui:
+            return {"success": False, "message": "❌ PyAutoGUI non installé"}
+
+        # 1. Essayer de localiser la fenêtre Discord existante pour obtenir ses coordonnées réelles
+        hwnd_discord = None
+        try:
+            import win32gui
+            import win32con
+            
+            def enum_windows_callback(hwnd, extra):
+                nonlocal hwnd_discord
+                if win32gui.IsWindowVisible(hwnd):
+                    title = win32gui.GetWindowText(hwnd).lower()
+                    if "discord" in title and "agent pc" not in title and "overlay" not in title:
+                        hwnd_discord = hwnd
+                return True
+            
+            win32gui.EnumWindows(enum_windows_callback, None)
+        except Exception:
+            pass
+
+        click_x, click_y = None, None
+
+        # 2. Si on a trouvé la fenêtre Discord, on l'active proprement
+        if hwnd_discord:
+            try:
+                import win32gui
+                import win32con
+                
+                # Restaurer si minimisée
+                if win32gui.IsIconic(hwnd_discord):
+                    win32gui.ShowWindow(hwnd_discord, win32con.SW_RESTORE)
+                    time.sleep(0.5)
+                
+                # Essayer de la mettre au premier plan
+                try:
+                    win32gui.SetForegroundWindow(hwnd_discord)
+                except Exception:
+                    pass
+                time.sleep(0.5)
+                
+                # Obtenir les coordonnées réelles
+                rect = win32gui.GetWindowRect(hwnd_discord)
+                left, top, right, bottom = rect
+                width = right - left
+                
+                # Cliquer au milieu horizontal de la fenêtre, et 50 pixels au-dessus de son bas
+                # Cela évite de cliquer sur la barre des tâches de Windows si Discord est maximisé
+                click_x = left + (width // 2)
+                click_y = bottom - 50
+            except Exception as e:
+                print(f"⚠️ Erreur lors du ciblage de la fenêtre Discord : {e}")
+
+        # 3. Si on n'a pas pu cibler la fenêtre, on applique la méthode de relance (fallback)
+        if click_x is None or click_y is None:
+            try:
+                from config import APPS
+                discord_cmd = APPS.get("discord", "")
+                if discord_cmd:
+                    discord_cmd = os.path.expandvars(discord_cmd)
+                    subprocess.Popen(discord_cmd, shell=True)
+                else:
+                    discord_path = os.path.expandvars(r"%LOCALAPPDATA%\Discord\Update.exe")
+                    if os.path.exists(discord_path):
+                        subprocess.Popen([discord_path, "--processStart", "Discord.exe"])
+            except Exception as e:
+                print(f"⚠️ Impossible de relancer Discord : {e}")
+                
+            # Attendre que Discord s'ouvre/s'affiche
+            time.sleep(4)
+            
+            # Clic par défaut sur le moniteur sélectionné (ou principal)
+            region = self._get_selected_monitor_rect()
+            if region:
+                mon_x, mon_y, mon_w, mon_h = region
+                click_x = mon_x + (mon_w // 2)
+                click_y = mon_y + mon_h - 80  # Augmenté à 80 pour être bien au-dessus de la barre des tâches
+            else:
+                screen_w, screen_h = pyautogui.size()
+                click_x = screen_w // 2
+                click_y = screen_h - 80  # Augmenté à 80 pour être bien au-dessus de la barre des tâches
+
+        # 4. Effectuer le clic, coller/taper et envoyer
+        try:
+            # Effectuer le clic
+            pyautogui.click(click_x, click_y)
+            time.sleep(0.5)
+            
+            is_slash = message.startswith("/")
+
+            if is_slash:
+                # Boucle sur le nombre de bots
+                for i in range(bot_count):
+                    # Vider le chat avant de taper (au cas où)
+                    pyautogui.hotkey("ctrl", "a")
+                    time.sleep(0.1)
+                    pyautogui.press("delete")
+                    time.sleep(0.1)
+
+                    # Taper la commande (indispensable pour ouvrir l'autocomplétion)
+                    pyautogui.write(message, interval=0.04)
+                    
+                    # Attendre que le menu d'autocomplétion de Discord apparaisse
+                    time.sleep(1.5)
+
+                    # Descendre de i lignes pour sélectionner le i-ème bot
+                    for _ in range(i):
+                        pyautogui.press("down")
+                        time.sleep(0.1)
+
+                    # Appuyer sur Tab pour valider la commande slash
+                    pyautogui.press("tab")
+                    time.sleep(0.5)
+                    
+                    # Envoyer
+                    pyautogui.press("enter")
+                    
+                    # Attendre 3 secondes entre chaque envoi pour laisser le temps au bot Discord de répondre
+                    if i < bot_count - 1:
+                        time.sleep(3.0)
+
+                return {"success": True, "message": f"💬 Commande Discord '{message}' envoyée à {bot_count} bot(s)."}
+            else:
+                # Cas d'un message standard : copier/coller classique plus rapide
+                # Copier le message dans le presse-papiers
+                try:
+                    import pyperclip
+                    pyperclip.copy(message)
+                except Exception:
+                    try:
+                        proc = subprocess.Popen(["clip.exe"], stdin=subprocess.PIPE)
+                        proc.communicate(message.encode("utf-8"))
+                    except Exception as e:
+                        return {"success": False, "message": f"❌ Impossible de copier dans le presse-papiers: {e}"}
+
+                # Coller
+                pyautogui.hotkey("ctrl", "v")
+                time.sleep(0.3)
+                
+                # Envoyer
+                pyautogui.press("enter")
+                time.sleep(0.2)
+                
+                return {"success": True, "message": f"💬 Message Discord envoyé : '{message}'"}
+                
+        except Exception as e:
+            return {"success": False, "message": f"⚠️ Erreur lors du clic/envoi : {e}"}
+
+    def _handle_organize_desktop(self, action):
+        """Organise les fichiers éparpillés sur le Bureau en les classant dans des dossiers par catégories."""
+        import shutil
+        desktop_path = os.path.join(os.path.expanduser("~"), "Desktop")
+        if not os.path.exists(desktop_path):
+            return {"success": False, "message": "Bureau introuvable."}
+
+        # Catégories de fichiers
+        categories = {
+            "Images": [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg"],
+            "Documents": [".pdf", ".docx", ".doc", ".xlsx", ".xls", ".pptx", ".ppt", ".txt", ".csv", ".rtf"],
+            "Archives": [".zip", ".rar", ".7z", ".tar", ".gz"],
+            "Audios": [".mp3", ".wav", ".aac", ".flac", ".ogg"],
+            "Vidéos": [".mp4", ".avi", ".mkv", ".mov", ".flv"],
+            "Installateurs & Exe": [".exe", ".msi"]
+        }
+
+        files_moved = 0
+        try:
+            for item in os.listdir(desktop_path):
+                item_path = os.path.join(desktop_path, item)
+                
+                # Ignorer les dossiers et les fichiers système cachés/raccourcis importants (ex: .lnk)
+                if os.path.isdir(item_path) or item.startswith(".") or item.lower() == "desktop.ini" or item.endswith(".lnk"):
+                    continue
+                
+                # Déterminer la catégorie par extension
+                _, ext = os.path.splitext(item)
+                ext = ext.lower()
+                
+                target_cat = "Autres"
+                for cat, extensions in categories.items():
+                    if ext in extensions:
+                        target_cat = cat
+                        break
+                
+                # Créer le dossier cible s'il n'existe pas
+                cat_dir = os.path.join(desktop_path, target_cat)
+                os.makedirs(cat_dir, exist_ok=True)
+                
+                # Déplacer le fichier
+                shutil.move(item_path, os.path.join(cat_dir, item))
+                files_moved += 1
+                
+            return {"success": True, "message": f"📁 Bureau organisé avec succès ! {files_moved} fichiers classés."}
+        except Exception as e:
+            return {"success": False, "message": f"⚠️ Erreur lors de l'organisation : {e}"}
+
+
+
+
+4. L'exécution physique du Bump (L'ActionEngine)
+Le handler de message Discord : 
+
+actions.py:L743-902
+ dans la méthode _handle_discord_message.
+Lignes 759-775 : Recherche de la fenêtre Discord avec win32gui.EnumWindows.
+Lignes 780-805 : Mise au premier plan et calcul de la zone de clic.
+Lignes 840-877 : La boucle principale PyAutoGUI (effacer, écrire /bump, descendre dans l'autocomplétion, valider et envoyer).
+
+
+
+

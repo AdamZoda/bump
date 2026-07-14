@@ -1,0 +1,26 @@
+
+Crée un script Python complet sous Windows avec une interface graphique (GUI) simple et moderne utilisant Tkinter. 
+L'application doit me permettre de lancer manuellement une automatisation de commandes slash Discord (comme le "/bump") sur plusieurs bots à la fois.
+
+Voici les spécifications détaillées de l'interface graphique (GUI) :
+1. Une zone de saisie de texte pour la "Commande" (par défaut pré-remplie avec "/bump").
+2. Une zone de saisie numérique (Spinbox) pour le "Nombre de bots" (par défaut à 10).
+3. Un bouton d'action "LANCER LE BUMP" (au clic, il doit exécuter l'action).
+4. Une zone de texte de log (Console) pour afficher le statut en temps réel (ex: "Recherche de Discord...", "Bot 1/10 envoyé...", etc.).
+5. IMPORTANT : L'action de bump doit s'exécuter dans un Thread séparé (threading) pour éviter que l'interface graphique ne freeze/bloque pendant l'exécution (qui peut durer plus de 50 secondes).
+
+Voici la logique technique exacte à implémenter pour l'exécution du Bump :
+1. Dépendances requises : pyautogui, pywin32 (win32gui, win32con).
+2. Localisation de Discord : Parcourir les fenêtres actives de Windows avec win32gui.EnumWindows pour trouver celle qui contient "discord" dans son titre (en excluant "overlay" et le nom de notre propre script).
+3. Activation : Si trouvée, restaurer la fenêtre si elle est minimisée (win32gui.ShowWindow avec SW_RESTORE), la mettre au premier plan (win32gui.SetForegroundWindow) et attendre 0.5s.
+4. Coordonnées de clic : Calculer le rectangle de la fenêtre. Cliquer au centre horizontal, et 50 pixels au-dessus du bas de la fenêtre (pour cibler la zone de saisie Discord de manière sûre, même si Discord est maximisé).
+5. La boucle de Bump (pour i allant de 0 à Nombre de bots - 1) :
+   - Nettoyer le chat : simuler "Ctrl+A" puis "Suppr" (attendre 100ms entre chaque).
+   - Taper la commande : utiliser pyautogui.write(commande, interval=0.04) pour taper lentement caractère par caractère (important pour que Discord déclenche le menu d'autocomplétion).
+   - Attendre 1.5s que le menu d'autocomplétion Discord apparaisse.
+   - Naviguer : simuler l'appui sur la touche "Down" (Flèche Bas) i fois, avec 100ms de pause entre chaque appui, pour descendre sur le i-ème bot de la liste.
+   - Valider : simuler l'appui sur "Tab", attendre 500ms.
+   - Envoyer : simuler l'appui sur "Enter".
+   - Délai : si ce n'est pas le dernier bot de la liste, attendre 3.0s avant de passer au bot suivant (pour éviter le rate-limiting et laisser le bot répondre).
+
+Fournis-moi le code Python complet, propre, commenté et prêt à l'emploi.
