@@ -43,7 +43,7 @@ class DiscordBumperApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Bumper Multi-Bot - Control Panel")
-        self.root.geometry("400x120")  # Compact geometry for the loading splash
+        self.root.geometry("400x180")  # Compact geometry for the loading splash
         self.root.configure(bg="#313338")  # Discord Dark Theme background
         self.root.resizable(False, False)
         
@@ -93,15 +93,44 @@ class DiscordBumperApp:
     def create_loading_widgets(self):
         self.loading_frame = tk.Frame(self.root, bg=self.bg_color)
         self.loading_frame.pack(fill="both", expand=True)
-        
+
+        # Logo on loading screen
+        if os.path.exists(self.logo_png_path):
+            try:
+                pil_img = Image.open(self.logo_png_path).resize((56, 56), Image.Resampling.LANCZOS)
+                self._loading_logo = ImageTk.PhotoImage(pil_img)
+                tk.Label(self.loading_frame, image=self._loading_logo, bg=self.bg_color).pack(pady=(20, 6))
+            except Exception:
+                pass
+
         self.loading_label = tk.Label(
             self.loading_frame,
             text="Vérification de la licence...",
-            font=("Segoe UI", 11, "bold"),
+            font=("Segoe UI", 10, "bold"),
             bg=self.bg_color,
             fg=self.text_color
         )
-        self.loading_label.pack(expand=True)
+        self.loading_label.pack()
+
+        self.loading_sub = tk.Label(
+            self.loading_frame,
+            text="Connexion au serveur...",
+            font=("Segoe UI", 8),
+            bg=self.bg_color,
+            fg="#949ba4"
+        )
+        self.loading_sub.pack(pady=(2, 16))
+
+        # Animated dots
+        self._dot_count = 0
+        self._animate_dots()
+
+    def _animate_dots(self):
+        dots = "." * (self._dot_count % 4)
+        if hasattr(self, "loading_sub") and self.loading_sub.winfo_exists():
+            self.loading_sub.config(text=f"Connexion au serveur{dots}")
+            self._dot_count += 1
+            self._dot_timer = self.root.after(400, self._animate_dots)
 
     def show_login_screen(self):
         if hasattr(self, "loading_frame") and self.loading_frame:
@@ -644,38 +673,89 @@ class DiscordBumperApp:
             pass
 
     def check_updates_and_status(self):
-        # We start status check in background thread
+        # Always run the security check — no bypass allowed
         threading.Thread(target=self._run_security_check, daemon=True).start()
 
     def _run_security_check(self):
-        # Dev bypass if raw url is default
-        if not CHECK_URL or CHECK_URL.startswith("https://raw.githubusercontent.com/adamm-git"):
-            time.sleep(0.6) # Short delay for smooth loading display
-            self.root.after(0, self.show_login_screen)
+        # ⚠️ NO DEV BYPASS — verification is always mandatory
+        if not CHECK_URL:
+            # If CHECK_URL is empty, block access entirely for safety
+            self.root.after(0, self._handle_connection_error, "CHECK_URL non configurée.")
             return
-            
+
         try:
-            req = urllib.request.Request(CHECK_URL, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=5) as response:
+            req = urllib.request.Request(CHECK_URL, headers={'User-Agent': 'BumperApp/1.0'})
+            with urllib.request.urlopen(req, timeout=8) as response:
                 data = json.loads(response.read().decode('utf-8'))
-                
-                # Check block/kill-switch status
+
+                # 1. Check block/kill-switch
                 if data.get("blocked", False):
                     self.root.after(0, self._handle_blocked_app, data.get("message", "Accès refusé."))
                     return
-                
-                # Check for mandatory update
+
+                # 2. Check for mandatory update
                 latest_version = data.get("version", CURRENT_VERSION)
                 if latest_version != CURRENT_VERSION:
-                    update_msg = f"Version {latest_version} obligatoire.\n\nRaison : {data.get('message', 'Mise à jour requise.')}"
-                    self.root.after(0, self._handle_mandatory_update, update_msg)
+                    update_url = data.get("url_mise_a_jour", "")
+                    self.root.after(0, self._handle_auto_update, latest_version, update_url)
                     return
-                
-                # Success -> Load password screen
+
+                # 3. All good — show login
                 self.root.after(0, self.show_login_screen)
+
         except Exception as e:
-            error_msg = f"Connexion Internet requise pour vérifier l'authenticité de l'application.\n\nDétails : {e}"
+            error_msg = f"Connexion Internet requise.\n\nDétails : {e}"
             self.root.after(0, self._handle_connection_error, error_msg)
+
+    def _handle_auto_update(self, new_version, update_url):
+        """Show update loader, download new script, relaunch."""
+        # Stop dot animation
+        if hasattr(self, "_dot_timer"):
+            self.root.after_cancel(self._dot_timer)
+
+        # Update the loading screen text
+        if hasattr(self, "loading_label") and self.loading_label.winfo_exists():
+            self.loading_label.config(text=f"Mise à jour v{new_version} en cours...", fg=self.yellow_color)
+        if hasattr(self, "loading_sub") and self.loading_sub.winfo_exists():
+            self.loading_sub.config(text="Téléchargement... veuillez patienter")
+
+        # Progress bar
+        self._progress_frame = tk.Frame(self.loading_frame, bg=self.bg_color)
+        self._progress_frame.pack(fill="x", padx=40, pady=(4, 0))
+        self._progress_bar = ttk.Progressbar(self._progress_frame, mode='indeterminate', length=300)
+        self._progress_bar.pack(fill="x")
+        self._progress_bar.start(12)
+
+        # Run download in thread
+        threading.Thread(target=self._download_and_relaunch, args=(update_url, new_version), daemon=True).start()
+
+    def _download_and_relaunch(self, update_url, new_version):
+        script_path = os.path.abspath(sys.argv[0])
+        try:
+            if update_url:
+                req = urllib.request.Request(update_url, headers={'User-Agent': 'BumperApp/1.0'})
+                with urllib.request.urlopen(req, timeout=30) as r:
+                    new_code = r.read()
+                # Write new version
+                with open(script_path, 'wb') as f:
+                    f.write(new_code)
+                self.root.after(0, self._relaunch_app)
+            else:
+                # No URL — show message and exit so user can get it manually
+                self.root.after(0, self._handle_mandatory_update,
+                    f"Nouvelle version {new_version} disponible.\nTéléchargez la dernière version manuellement.")
+        except Exception as e:
+            self.root.after(0, self._handle_mandatory_update,
+                f"Échec du téléchargement v{new_version}.\nDétails : {e}")
+
+    def _relaunch_app(self):
+        if hasattr(self, "loading_label") and self.loading_label.winfo_exists():
+            self.loading_label.config(text="Mise à jour terminée ! Relancement...", fg=self.green_color)
+        self.root.after(1500, self._do_relaunch)
+
+    def _do_relaunch(self):
+        self.root.destroy()
+        os.execv(sys.executable, [sys.executable] + sys.argv)
 
     def _handle_blocked_app(self, reason):
         messagebox.showerror(
