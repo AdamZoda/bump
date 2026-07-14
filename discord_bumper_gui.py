@@ -1101,17 +1101,27 @@ class DiscordBumperApp:
         self.root.after(0, lambda: self.set_gui_state(True))
 
 if __name__ == "__main__":
+    # ─── Fix taskbar icon on Windows ───────────────────────────────────────────
+    # Without this, Windows groups the app under python.exe and shows Python icon.
+    # Setting a unique AppUserModelID makes Windows treat it as its own app.
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            u"BumperMultiBot.DiscordBumper.1.0"
+        )
+    except Exception:
+        pass
+
     # Enable high-DPI scaling on Windows
     try:
         import ctypes
         ctypes.windll.shcore.SetProcessDpiAwareness(1)
     except Exception:
         try:
-            import ctypes
             ctypes.windll.user32.SetProcessDPIAware()
         except Exception:
             pass
-            
+
     root = tk.Tk()
     app = DiscordBumperApp(root)
     root.mainloop()
