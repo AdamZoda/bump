@@ -35,7 +35,7 @@ except ImportError:
 #   "message": "OK",
 #   "url_mise_a_jour": "https://github.com/..."
 # }
-CHECK_URL = "https://raw.githubusercontent.com/adamm-git/bump-config/main/config.json"
+CHECK_URL = "https://raw.githubusercontent.com/AdamZoda/bump/main/config.json"
 CURRENT_VERSION = "1.0.0"
 PASSWORD_HASH = "5fbde9bb9c3fd8c224020057695ac4664a3fa134bdcd4f0550e2fad2202a14bf" # sha256 of "bump"
 
