@@ -55,9 +55,16 @@ class DiscordBumperApp:
         # Get own HWND to exclude it from window searching
         self.my_hwnd = None
         
-        # Paths for custom logo branding
-        self.logo_ico_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logo.ico")
-        self.logo_png_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logo-V2.png")
+        # Paths for custom logo branding (compatible with PyInstaller _MEIPASS)
+        if getattr(sys, 'frozen', False):
+            self.base_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+            self.asset_dir = getattr(sys, '_MEIPASS', self.base_dir)
+        else:
+            self.base_dir = os.path.dirname(os.path.abspath(__file__))
+            self.asset_dir = self.base_dir
+            
+        self.logo_png_path = os.path.join(self.asset_dir, "logo-V2.png")
+        self.logo_ico_path = os.path.join(self.base_dir, "logo.ico")
         
         self.setup_styles()
         
@@ -735,12 +742,17 @@ class DiscordBumperApp:
                 shell = Dispatch('WScript.Shell')
                 shortcut = shell.CreateShortCut(shortcut_path)
                 
-                script_path = os.path.abspath(sys.argv[0])
-                python_exe = sys.executable.replace("python.exe", "pythonw.exe")
-                
-                shortcut.TargetPath = python_exe
-                shortcut.Arguments = f'"{script_path}"'
-                shortcut.WorkingDirectory = os.path.dirname(script_path)
+                # Check if running as a compiled PyInstaller EXE
+                if getattr(sys, 'frozen', False):
+                    shortcut.TargetPath = os.path.abspath(sys.argv[0])
+                    shortcut.Arguments = ""
+                    shortcut.WorkingDirectory = os.path.dirname(os.path.abspath(sys.argv[0]))
+                else:
+                    script_path = os.path.abspath(sys.argv[0])
+                    python_exe = sys.executable.replace("python.exe", "pythonw.exe")
+                    shortcut.TargetPath = python_exe
+                    shortcut.Arguments = f'"{script_path}"'
+                    shortcut.WorkingDirectory = os.path.dirname(script_path)
                 
                 if os.path.exists(self.logo_ico_path):
                     shortcut.IconLocation = self.logo_ico_path
