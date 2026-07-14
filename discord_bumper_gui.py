@@ -60,6 +60,18 @@ class DiscordBumperApp:
         self.logo_png_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logo-V2.png")
         
         self.setup_styles()
+        
+        # Convert logo PNG to ICO immediately at startup so it's active for loading/login windows
+        if not os.path.exists(self.logo_ico_path) and os.path.exists(self.logo_png_path):
+            self.convert_png_to_ico(self.logo_png_path, self.logo_ico_path)
+            
+        # Set Window Title Icon immediately
+        if os.path.exists(self.logo_ico_path):
+            try:
+                self.root.iconbitmap(self.logo_ico_path)
+            except Exception:
+                pass
+                
         self.create_loading_widgets()
         
         # Start checking updates
@@ -95,7 +107,8 @@ class DiscordBumperApp:
         if hasattr(self, "loading_frame") and self.loading_frame:
             self.loading_frame.destroy()
             
-        self.root.geometry("420x260")
+        # Increased height to 310 to prevent the bottom button from being cut off
+        self.root.geometry("420x310")
         
         self.login_frame = tk.Frame(self.root, bg=self.bg_color)
         self.login_frame.pack(fill="both", expand=True)
@@ -103,16 +116,17 @@ class DiscordBumperApp:
         login_header = tk.Frame(self.login_frame, bg=self.bg_color, pady=15)
         login_header.pack(fill="x")
         
-        # Load logo for login header
+        # Load logo for login header (wider and taller, keeping aspect ratio)
         if os.path.exists(self.logo_png_path):
             try:
                 pil_img = Image.open(self.logo_png_path)
                 aspect_ratio = pil_img.width / pil_img.height
-                target_width = int(40 * aspect_ratio)
-                self.login_logo_image = ImageTk.PhotoImage(pil_img.resize((target_width, 40), Image.Resampling.LANCZOS))
+                target_height = 45
+                target_width = int(target_height * aspect_ratio)
+                self.login_logo_image = ImageTk.PhotoImage(pil_img.resize((target_width, target_height), Image.Resampling.LANCZOS))
                 
                 logo_label = tk.Label(login_header, image=self.login_logo_image, bg=self.bg_color)
-                logo_label.pack(side="left", padx=(40, 10))
+                logo_label.pack(side="left", padx=(30, 10))
             except Exception:
                 pass
                 
