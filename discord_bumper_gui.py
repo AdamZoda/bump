@@ -6,6 +6,8 @@ import queue
 import urllib.request
 import json
 import hashlib
+import subprocess
+import webbrowser
 import tkinter as tk
 from tkinter import messagebox
 from tkinter import ttk
@@ -68,6 +70,30 @@ class DiscordBumperApp:
         
         self.setup_styles()
         
+        # Check requirements first
+        self.missing_libs = []
+        try:
+            import pyautogui
+        except ImportError:
+            self.missing_libs.append("pyautogui")
+            
+        try:
+            import win32gui
+            import win32con
+            from win32com.client import Dispatch
+        except ImportError:
+            self.missing_libs.append("pywin32")
+            
+        try:
+            from PIL import Image, ImageTk
+        except ImportError:
+            self.missing_libs.append("Pillow")
+            
+        try:
+            import pyperclip
+        except ImportError:
+            self.missing_libs.append("pyperclip")
+        
         # Convert logo PNG to ICO immediately at startup so it's active for loading/login windows
         if not os.path.exists(self.logo_ico_path) and os.path.exists(self.logo_png_path):
             self.convert_png_to_ico(self.logo_png_path, self.logo_ico_path)
@@ -79,10 +105,12 @@ class DiscordBumperApp:
             except Exception:
                 pass
                 
-        self.create_loading_widgets()
-        
-        # Start checking updates
-        self.check_updates_and_status()
+        if self.missing_libs:
+            self.create_diagnostics_widgets()
+        else:
+            self.create_loading_widgets()
+            # Start checking updates
+            self.check_updates_and_status()
 
     def setup_styles(self):
         # Color scheme inspired by Discord Dark Mode
@@ -138,6 +166,162 @@ class DiscordBumperApp:
             self.loading_sub.config(text=f"Connexion au serveur{dots}")
             self._dot_count += 1
             self._dot_timer = self.root.after(400, self._animate_dots)
+
+    def create_diagnostics_widgets(self):
+        # Resize window to fit setup assistant
+        self.root.geometry("460x490")
+        
+        self.diag_frame = tk.Frame(self.root, bg=self.bg_color)
+        self.diag_frame.pack(fill="both", expand=True)
+        
+        # Header
+        header = tk.Frame(self.diag_frame, bg=self.bg_color, pady=15)
+        header.pack(fill="x")
+        
+        # Load logo for diagnostics header
+        if os.path.exists(self.logo_png_path):
+            try:
+                pil_img = Image.open(self.logo_png_path)
+                aspect_ratio = pil_img.width / pil_img.height
+                target_height = 45
+                target_width = int(target_height * aspect_ratio)
+                self.diag_logo_image = ImageTk.PhotoImage(pil_img.resize((target_width, target_height), Image.Resampling.LANCZOS))
+                
+                logo_label = tk.Label(header, image=self.diag_logo_image, bg=self.bg_color)
+                logo_label.pack(side="left", padx=(30, 10))
+            except Exception:
+                pass
+                
+        title_frame = tk.Frame(header, bg=self.bg_color)
+        title_frame.pack(side="left")
+        
+        tk.Label(
+            title_frame, 
+            text="ASSISTANT CONFIGURATION", 
+            font=("Segoe UI", 12, "bold"), 
+            bg=self.bg_color, 
+            fg=self.white_color
+        ).pack(anchor="w")
+        
+        tk.Label(
+            title_frame, 
+            text="Composants manquants détectés", 
+            font=("Segoe UI", 8, "italic"), 
+            bg=self.bg_color, 
+            fg=self.red_color
+        ).pack(anchor="w")
+        
+        # Form Container
+        card = tk.Frame(self.diag_frame, bg=self.card_color, bd=0, highlightbackground="#232428", highlightthickness=1)
+        card.pack(fill="both", expand=True, padx=25, pady=(0, 15))
+        
+        tk.Label(
+            card, 
+            text="Statut des prérequis :", 
+            font=("Segoe UI", 10, "bold"), 
+            bg=self.card_color, 
+            fg=self.text_color
+        ).pack(anchor="w", padx=15, pady=(15, 5))
+        
+        # List requirements
+        reqs = [
+            ("Python (Interpréteur)", "Installé", True),
+            ("Librairie 'pyautogui'", "Manquant" if "pyautogui" in self.missing_libs else "Installé", "pyautogui" not in self.missing_libs),
+            ("Librairie 'pywin32'", "Manquant" if "pywin32" in self.missing_libs else "Installé", "pywin32" not in self.missing_libs),
+            ("Librairie 'Pillow'", "Manquant" if "Pillow" in self.missing_libs else "Installé", "Pillow" not in self.missing_libs),
+            ("Librairie 'pyperclip'", "Manquant" if "pyperclip" in self.missing_libs else "Installé", "pyperclip" not in self.missing_libs),
+        ]
+        
+        for name, status, ok in reqs:
+            row = tk.Frame(card, bg=self.card_color, pady=4)
+            row.pack(fill="x", padx=15)
+            
+            icon = "✔️" if ok else "❌"
+            color = self.green_color if ok else self.red_color
+            
+            tk.Label(row, text=icon, fg=color, bg=self.card_color, font=("Segoe UI", 10)).pack(side="left", padx=(0, 8))
+            tk.Label(row, text=name, fg=self.text_color, bg=self.card_color, font=("Segoe UI", 9)).pack(side="left")
+            tk.Label(row, text=status, fg=color, bg=self.card_color, font=("Segoe UI", 9, "bold")).pack(side="right")
+            
+        # Explanations
+        info_frame = tk.Frame(card, bg=self.input_bg, pady=10, padx=10)
+        info_frame.pack(fill="x", padx=15, pady=15)
+        
+        tk.Label(
+            info_frame, 
+            text="Pour corriger cela, copiez et exécutez la commande suivante\ndans votre terminal ou cliquez sur 'Installation Auto'.",
+            font=("Segoe UI", 8), 
+            bg=self.input_bg, 
+            fg="#949ba4",
+            justify="left"
+        ).pack(anchor="w")
+        
+        cmd_var = tk.StringVar(value="pip install pyautogui pywin32 Pillow pyperclip")
+        cmd_entry = tk.Entry(
+            info_frame, 
+            textvariable=cmd_var,
+            font=("Consolas", 9), 
+            bg=self.card_color, 
+            fg=self.white_color, 
+            bd=0, 
+            state="readonly"
+        )
+        cmd_entry.pack(fill="x", pady=(8, 2), ipady=3)
+        
+        # Copy button helper
+        def copy_cmd():
+            self.root.clipboard_clear()
+            self.root.clipboard_append("pip install pyautogui pywin32 Pillow pyperclip")
+            messagebox.showinfo("Copier", "Commande copiée dans le presse-papiers !")
+            
+        # Action Buttons inside card
+        btn_row = tk.Frame(card, bg=self.card_color)
+        btn_row.pack(fill="x", padx=15, pady=(0, 15))
+        
+        copy_btn = tk.Button(
+            btn_row, 
+            text="📋  Copier", 
+            font=("Segoe UI", 9, "bold"), 
+            bg="#4e5058", 
+            fg=self.white_color, 
+            bd=0, 
+            cursor="hand2", 
+            command=copy_cmd
+        )
+        copy_btn.pack(side="left", fill="x", expand=True, padx=(0, 5), ipady=5)
+        
+        def run_installer():
+            if os.path.exists("install.bat"):
+                subprocess.Popen(["cmd.exe", "/c", "start install.bat"])
+                self.root.destroy()
+                sys.exit(0)
+            else:
+                messagebox.showerror("Erreur", "Fichier install.bat introuvable.")
+                
+        inst_btn = tk.Button(
+            btn_row, 
+            text="🔧  Installation Auto", 
+            font=("Segoe UI", 9, "bold"), 
+            bg=self.blurple_color, 
+            fg=self.white_color, 
+            bd=0, 
+            cursor="hand2", 
+            command=run_installer
+        )
+        inst_btn.pack(side="right", fill="x", expand=True, padx=(5, 0), ipady=5)
+        
+        # Footer
+        tk.Label(
+            self.diag_frame,
+            text="Visitez https://python.org pour installer Python.",
+            font=("Segoe UI", 8, "underline"),
+            bg=self.bg_color,
+            fg=self.blurple_color,
+            cursor="hand2"
+        ).pack(side="bottom", pady=(0, 15))
+        
+        # Bind the footer link to open browser
+        self.diag_frame.bind_class("Label", "<Button-1>", lambda e: webbrowser.open("https://www.python.org/downloads/") if "python.org" in e.widget.cget("text") else None)
 
     def show_login_screen(self):
         if hasattr(self, "loading_frame") and self.loading_frame:
