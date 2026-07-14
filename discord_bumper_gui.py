@@ -135,9 +135,15 @@ class DiscordBumperApp:
     def show_login_screen(self):
         if hasattr(self, "loading_frame") and self.loading_frame:
             self.loading_frame.destroy()
-            
-        # Increased height to 310 to prevent the bottom button from being cut off
-        self.root.geometry("420x310")
+
+        # Cache file path for "remember password"
+        self._auth_cache_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".auth_cache")
+
+        # Check if we have a remembered password — auto login
+        if self._load_cached_auth():
+            return  # Already launched main app
+
+        self.root.geometry("420x360")
         
         self.login_frame = tk.Frame(self.root, bg=self.bg_color)
         self.login_frame.pack(fill="both", expand=True)
@@ -161,22 +167,32 @@ class DiscordBumperApp:
                 
         title_frame = tk.Frame(login_header, bg=self.bg_color)
         title_frame.pack(side="left")
-        
+
         tk.Label(
-            title_frame, 
-            text="BUMPER MULTI-BOT", 
-            font=("Segoe UI", 12, "bold"), 
-            bg=self.bg_color, 
+            title_frame,
+            text="BUMPER MULTI-BOT",
+            font=("Segoe UI", 12, "bold"),
+            bg=self.bg_color,
             fg=self.white_color
         ).pack(anchor="w")
-        
+
         tk.Label(
-            title_frame, 
-            text="Authentification requise", 
-            font=("Segoe UI", 8, "italic"), 
-            bg=self.bg_color, 
+            title_frame,
+            text="Authentification requise",
+            font=("Segoe UI", 8, "italic"),
+            bg=self.bg_color,
             fg="#949ba4"
         ).pack(anchor="w")
+
+        # Version badge top-right
+        tk.Label(
+            login_header,
+            text=f"v{CURRENT_VERSION}",
+            font=("Segoe UI", 8, "bold"),
+            bg=self.blurple_color,
+            fg=self.white_color,
+            padx=6, pady=2
+        ).pack(side="right", padx=(0, 20), anchor="n")
         
         # Form Container
         form_card = tk.Frame(self.login_frame, bg=self.card_color, bd=0, highlightbackground="#232428", highlightthickness=1)
@@ -209,41 +225,103 @@ class DiscordBumperApp:
         self.password_entry.bind("<Return>", lambda e: self.validate_password())
         
         self.error_label = tk.Label(
-            form_card, 
-            text="", 
-            font=("Segoe UI", 9, "bold"), 
-            bg=self.card_color, 
+            form_card,
+            text="",
+            font=("Segoe UI", 9, "bold"),
+            bg=self.card_color,
             fg=self.red_color
         )
         self.error_label.pack(anchor="w", padx=15, pady=(5, 0))
-        
+
+        # Remember password checkbox
+        self.remember_var = tk.BooleanVar(value=False)
+        remember_cb = tk.Checkbutton(
+            form_card,
+            text="Se souvenir du mot de passe",
+            variable=self.remember_var,
+            font=("Segoe UI", 9),
+            bg=self.card_color,
+            fg="#949ba4",
+            activebackground=self.card_color,
+            activeforeground=self.text_color,
+            selectcolor=self.input_bg,
+            cursor="hand2"
+        )
+        remember_cb.pack(anchor="w", padx=15, pady=(4, 0))
+
         submit_btn = tk.Button(
-            form_card, 
-            text="🔑  VALIDER", 
-            font=("Segoe UI", 10, "bold"), 
-            bg=self.blurple_color, 
-            fg=self.white_color, 
-            activebackground=self.blurple_hover, 
+            form_card,
+            text="🔑  VALIDER",
+            font=("Segoe UI", 10, "bold"),
+            bg=self.blurple_color,
+            fg=self.white_color,
+            activebackground=self.blurple_hover,
             activeforeground=self.white_color,
-            bd=0, 
-            cursor="hand2", 
+            bd=0,
+            cursor="hand2",
             command=self.validate_password
         )
-        submit_btn.pack(fill="x", padx=15, pady=(10, 15), ipady=6)
+        submit_btn.pack(fill="x", padx=15, pady=(10, 12), ipady=6)
         submit_btn.bind("<Enter>", lambda e: submit_btn.configure(bg=self.blurple_hover))
         submit_btn.bind("<Leave>", lambda e: submit_btn.configure(bg=self.blurple_color))
+
+        # Footer version
+        tk.Label(
+            self.login_frame,
+            text=f"Bumper Multi-Bot  •  Version {CURRENT_VERSION}",
+            font=("Segoe UI", 7),
+            bg=self.bg_color,
+            fg="#4e5058"
+        ).pack(side="bottom", pady=(0, 6))
+
+    def _load_cached_auth(self):
+        """If a saved hash exists and matches PASSWORD_HASH, auto-login."""
+        try:
+            if os.path.exists(self._auth_cache_path):
+                with open(self._auth_cache_path, 'r') as f:
+                    saved_hash = f.read().strip()
+                if saved_hash == PASSWORD_HASH:
+                    # Saved hash is still valid — launch main app directly
+                    self.root.geometry("640x510")
+                    self.create_widgets()
+                    self.run_logo_and_shortcut_logic()
+                    return True
+                else:
+                    # Password changed — delete old cache
+                    os.remove(self._auth_cache_path)
+        except Exception:
+            pass
+        return False
+
+    def _save_cached_auth(self, password_hash):
+        """Save hash locally for auto-login next time."""
+        try:
+            with open(self._auth_cache_path, 'w') as f:
+                f.write(password_hash)
+        except Exception:
+            pass
 
     def validate_password(self):
         entered_password = self.password_var.get().strip()
         if not entered_password:
             self.error_label.config(text="Veuillez saisir un mot de passe.")
             return
-            
+
         entered_hash = hashlib.sha256(entered_password.encode('utf-8')).hexdigest()
-        
+
         if entered_hash == PASSWORD_HASH:
+            # Save hash if "remember" is checked
+            if self.remember_var.get():
+                self._save_cached_auth(entered_hash)
+            else:
+                # Remove cache if unchecked
+                try:
+                    if os.path.exists(self._auth_cache_path):
+                        os.remove(self._auth_cache_path)
+                except Exception:
+                    pass
             self.login_frame.destroy()
-            self.root.geometry("640x510")  # Default main panel size
+            self.root.geometry("640x510")
             self.create_widgets()
             self.run_logo_and_shortcut_logic()
         else:
