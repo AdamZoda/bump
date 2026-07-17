@@ -53,6 +53,7 @@ class DiscordBumperApp:
         self.log_queue = queue.Queue()
         self.is_running = False
         self.stop_event = threading.Event()
+        self.offline_mode = False
         
         # Get own HWND to exclude it from window searching
         self.my_hwnd = None
@@ -67,6 +68,8 @@ class DiscordBumperApp:
             
         self.logo_png_path = os.path.join(self.asset_dir, "logo-V2.png")
         self.logo_ico_path = os.path.join(self.base_dir, "logo.ico")
+        self._auth_cache_path = os.path.join(self.base_dir, ".auth_cache")
+        self._settings_cache_path = os.path.join(self.base_dir, ".settings_cache")
         
         self.setup_styles()
         
@@ -327,9 +330,6 @@ class DiscordBumperApp:
         if hasattr(self, "loading_frame") and self.loading_frame:
             self.loading_frame.destroy()
 
-        # Cache file path for "remember password"
-        self._auth_cache_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".auth_cache")
-
         # Check if we have a remembered password — auto login
         if self._load_cached_auth():
             return  # Already launched main app
@@ -465,6 +465,49 @@ class DiscordBumperApp:
             fg="#4e5058"
         ).pack(side="bottom", pady=(0, 6))
 
+    def load_settings(self):
+        defaults = {
+            "cmd": "/bump",
+            "bot_count": "10",
+            "target_app": "Discord (App)",
+            "enable_multi_server": False,
+            "server_list": [],
+            "show_scheduling": False,
+            "enable_interval": False,
+            "interval_val": "5",
+            "interval_unit": "Minutes",
+            "enable_daily": False,
+            "daily_times": "12:00, 18:30"
+        }
+        try:
+            if os.path.exists(self._settings_cache_path):
+                with open(self._settings_cache_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    defaults.update(data)
+        except Exception:
+            pass
+        return defaults
+
+    def save_settings(self):
+        try:
+            data = {
+                "cmd": self.cmd_entry.get().strip(),
+                "bot_count": self.count_spinbox.get().strip(),
+                "target_app": self.app_target_var.get(),
+                "enable_multi_server": self.enable_multi_server_var.get(),
+                "server_list": list(self.server_list),
+                "show_scheduling": self.show_scheduling_var.get(),
+                "enable_interval": self.enable_interval_var.get(),
+                "interval_val": self.interval_spinbox.get().strip(),
+                "interval_unit": self.unit_var.get(),
+                "enable_daily": self.enable_daily_var.get(),
+                "daily_times": self.daily_entry.get().strip()
+            }
+            with open(self._settings_cache_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
+
     def _load_cached_auth(self):
         """If a saved hash exists and matches PASSWORD_HASH, auto-login."""
         try:
@@ -473,7 +516,7 @@ class DiscordBumperApp:
                     saved_hash = f.read().strip()
                 if saved_hash == PASSWORD_HASH:
                     # Saved hash is still valid — launch main app directly
-                    self.root.geometry("640x510")
+                    self.root.geometry("640x600")
                     self.create_widgets()
                     self.run_logo_and_shortcut_logic()
                     return True
@@ -512,7 +555,7 @@ class DiscordBumperApp:
                 except Exception:
                     pass
             self.login_frame.destroy()
-            self.root.geometry("640x510")
+            self.root.geometry("640x600")
             self.create_widgets()
             self.run_logo_and_shortcut_logic()
         else:
@@ -543,6 +586,8 @@ class DiscordBumperApp:
             pass
 
     def create_widgets(self):
+        settings = self.load_settings()
+        
         # Header Label Frame
         header_frame = tk.Frame(self.root, bg=self.bg_color, pady=10)
         header_frame.pack(fill="x")
@@ -619,7 +664,7 @@ class DiscordBumperApp:
             disabledbackground="#2b2d31",
             disabledforeground="#72767d"
         )
-        self.cmd_entry.insert(0, "/bump")
+        self.cmd_entry.insert(0, settings.get("cmd", "/bump"))
         self.cmd_entry.grid(row=1, column=0, padx=15, pady=(0, 12), ipady=6, sticky="we")
         
         # Bot Count Input Field
@@ -651,11 +696,146 @@ class DiscordBumperApp:
             disabledforeground="#72767d"
         )
         self.count_spinbox.delete(0, "end")
-        self.count_spinbox.insert(0, "10")
+        self.count_spinbox.insert(0, settings.get("bot_count", "10"))
         self.count_spinbox.grid(row=1, column=1, padx=15, pady=(0, 12), ipady=5, sticky="we")
 
+        # Target App Selection Field
+        app_label_frame = tk.Frame(settings_frame, bg=self.card_color)
+        app_label_frame.grid(row=2, column=0, columnspan=2, padx=15, pady=(4, 4), sticky="w")
+        
+        tk.Label(
+            app_label_frame, 
+            text="Application cible :", 
+            font=("Segoe UI", 10, "bold"), 
+            bg=self.card_color, 
+            fg=self.text_color
+        ).pack(anchor="w")
+        
+        self.app_target_var = tk.StringVar(value=settings.get("target_app", "Discord (App)"))
+        
+        # Combobox style matching dark theme (configuring styles)
+        style = ttk.Style()
+        style.theme_use('clam')
+        style.configure(
+            "TCombobox", 
+            fieldbackground=self.input_bg, 
+            background="#2b2d31", 
+            foreground=self.white_color, 
+            arrowcolor=self.white_color
+        )
+        style.map(
+            "TCombobox",
+            fieldbackground=[("disabled", "#2b2d31"), ("readonly", self.input_bg)],
+            foreground=[("disabled", "#72767d"), ("readonly", self.white_color)],
+            arrowcolor=[("disabled", "#72767d"), ("readonly", self.white_color)]
+        )
+        
+        self.app_target_menu = ttk.Combobox(
+            settings_frame, 
+            textvariable=self.app_target_var, 
+            values=["Discord (App)", "Brave", "Chrome", "Firefox", "Edge"], 
+            state="readonly", 
+            style="TCombobox"
+        )
+        self.app_target_menu.grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 12), ipady=5, sticky="we")
+
+        # ── Multi-Server Section ──────────────────────────────────────────────
+        self.server_list = list(settings.get("server_list", []))
+        
+        self.enable_multi_server_var = tk.BooleanVar(value=settings.get("enable_multi_server", False))
+        self.multi_server_cb = tk.Checkbutton(
+            self.root,
+            text="🌐  Activer le bump multi-serveur",
+            font=("Segoe UI", 10, "bold"),
+            bg=self.bg_color,
+            fg=self.text_color,
+            activebackground=self.bg_color,
+            activeforeground=self.white_color,
+            selectcolor="#1e1f22",
+            var=self.enable_multi_server_var,
+            command=self.toggle_multi_server_panel
+        )
+        self.multi_server_cb.pack(anchor="w", padx=20, pady=(8, 4))
+        
+        # Multi-server panel (hidden by default)
+        self.multi_server_frame = tk.LabelFrame(
+            self.root, 
+            text=" Serveurs Cibles ", 
+            font=("Segoe UI", 10, "bold"), 
+            bg=self.bg_color, 
+            fg=self.white_color, 
+            bd=1, 
+            relief="solid", 
+            padx=15, 
+            pady=10
+        )
+        
+        # Add server row: Entry + Button
+        add_row = tk.Frame(self.multi_server_frame, bg=self.bg_color)
+        add_row.pack(fill="x", pady=(0, 8))
+        
+        self.server_name_entry = tk.Entry(
+            add_row,
+            font=("Segoe UI", 10),
+            bg=self.input_bg,
+            fg=self.white_color,
+            insertbackground=self.white_color,
+            bd=0,
+            highlightthickness=1,
+            highlightbackground="#1e1f22",
+            highlightcolor=self.blurple_color
+        )
+        self.server_name_entry.pack(side="left", fill="x", expand=True, ipady=5, padx=(0, 8))
+        self.server_name_entry.bind("<Return>", lambda e: self.add_server())
+        
+        self.add_server_btn = tk.Button(
+            add_row,
+            text="➕  Ajouter",
+            font=("Segoe UI", 9, "bold"),
+            bg=self.blurple_color,
+            fg=self.white_color,
+            activebackground=self.blurple_hover,
+            activeforeground=self.white_color,
+            bd=0,
+            cursor="hand2",
+            command=self.add_server
+        )
+        self.add_server_btn.pack(side="right", ipady=4, ipadx=8)
+        self.add_server_btn.bind("<Enter>", lambda e: self.add_server_btn.configure(bg=self.blurple_hover))
+        self.add_server_btn.bind("<Leave>", lambda e: self.add_server_btn.configure(bg=self.blurple_color))
+        
+        # Scrollable list of servers
+        self.server_list_container = tk.Frame(self.multi_server_frame, bg=self.input_bg, bd=0, highlightthickness=1, highlightbackground="#232428")
+        self.server_list_container.pack(fill="x")
+        
+        # Canvas + scrollbar for scrollable server tags
+        self.server_canvas = tk.Canvas(self.server_list_container, bg=self.input_bg, highlightthickness=0, height=90)
+        self.server_scrollbar = tk.Scrollbar(self.server_list_container, orient="vertical", command=self.server_canvas.yview)
+        self.server_inner_frame = tk.Frame(self.server_canvas, bg=self.input_bg)
+        
+        self.server_inner_frame.bind("<Configure>", lambda e: self.server_canvas.configure(scrollregion=self.server_canvas.bbox("all")))
+        self.server_canvas.create_window((0, 0), window=self.server_inner_frame, anchor="nw")
+        self.server_canvas.configure(yscrollcommand=self.server_scrollbar.set)
+        
+        self.server_canvas.pack(side="left", fill="both", expand=True)
+        self.server_scrollbar.pack(side="right", fill="y")
+        
+        # Info label
+        tk.Label(
+            self.multi_server_frame,
+            text="Le bot utilisera Ctrl+K pour naviguer vers chaque serveur et trouver le salon #bump.",
+            font=("Segoe UI", 8, "italic"),
+            bg=self.bg_color,
+            fg="#949ba4",
+            wraplength=550,
+            justify="left"
+        ).pack(anchor="w", pady=(6, 0))
+        
+        # Populate saved servers
+        self.refresh_server_list_ui()
+
         # Checkbox to toggle advanced scheduling options panel
-        self.show_scheduling_var = tk.BooleanVar(value=False)
+        self.show_scheduling_var = tk.BooleanVar(value=settings.get("show_scheduling", False))
         self.show_sched_cb = tk.Checkbutton(
             self.root,
             text="⚙️  Options de planification avancées",
@@ -684,7 +864,7 @@ class DiscordBumperApp:
         )
         
         # 1. Interval-based repetition checkbox
-        self.enable_interval_var = tk.BooleanVar(value=False)
+        self.enable_interval_var = tk.BooleanVar(value=settings.get("enable_interval", False))
         self.interval_cb = tk.Checkbutton(
             self.sched_frame, 
             text="Activer la répétition par intervalle", 
@@ -729,27 +909,10 @@ class DiscordBumperApp:
             disabledforeground="#72767d"
         )
         self.interval_spinbox.delete(0, "end")
-        self.interval_spinbox.insert(0, "5")
+        self.interval_spinbox.insert(0, settings.get("interval_val", "5"))
         self.interval_spinbox.pack(side="left", padx=5)
         
-        self.unit_var = tk.StringVar(value="Minutes")
-        
-        # Combobox style matching dark theme
-        style = ttk.Style()
-        style.theme_use('clam')
-        style.configure(
-            "TCombobox", 
-            fieldbackground=self.input_bg, 
-            background="#2b2d31", 
-            foreground=self.white_color, 
-            arrowcolor=self.white_color
-        )
-        style.map(
-            "TCombobox",
-            fieldbackground=[("disabled", "#2b2d31"), ("readonly", self.input_bg)],
-            foreground=[("disabled", "#72767d"), ("readonly", self.white_color)],
-            arrowcolor=[("disabled", "#72767d"), ("readonly", self.white_color)]
-        )
+        self.unit_var = tk.StringVar(value=settings.get("interval_unit", "Minutes"))
         
         self.unit_option_menu = ttk.Combobox(
             interval_input_frame, 
@@ -762,7 +925,7 @@ class DiscordBumperApp:
         self.unit_option_menu.pack(side="left", padx=5)
         
         # 2. Daily Fixed Times scheduling checkbox
-        self.enable_daily_var = tk.BooleanVar(value=False)
+        self.enable_daily_var = tk.BooleanVar(value=settings.get("enable_daily", False))
         self.daily_cb = tk.Checkbutton(
             self.sched_frame, 
             text="Activer la planification à heures fixes", 
@@ -803,7 +966,7 @@ class DiscordBumperApp:
             disabledbackground="#2b2d31",
             disabledforeground="#72767d"
         )
-        self.daily_entry.insert(0, "12:00, 18:30")
+        self.daily_entry.insert(0, settings.get("daily_times", "12:00, 18:30"))
         self.daily_entry.pack(fill="x", ipady=4)
         
         # Initialize enabling/disabling states based on checkboxes
@@ -885,7 +1048,15 @@ class DiscordBumperApp:
         self.console.tag_config("system", foreground="#949ba4", font=("Consolas", 9, "italic"))
         
         # Log default first messages that were queued
-        self.log("Console initialisée. Licence validée avec succès.", "success")
+        if getattr(self, "offline_mode", False):
+            self.log("Console initialisée. [Démarrage Hors-Ligne]", "warning")
+            self.log("⚠️ Impossible de se connecter au serveur de mise à jour. L'application s'exécute localement.", "warning")
+        else:
+            self.log("Console initialisée. Licence validée avec succès.", "success")
+        
+        # Restore toggle state after all widgets are packed
+        self.toggle_multi_server_panel()
+        self.toggle_scheduling_panel()
 
     def log(self, message, msg_type="info"):
         timestamp = time.strftime("[%H:%M:%S] ")
@@ -981,11 +1152,11 @@ class DiscordBumperApp:
                 # config.json absent du serveur — laisser passer (fichier pas encore déployé)
                 self.root.after(0, self.show_login_screen)
             else:
-                error_msg = f"Erreur serveur HTTP {e.code}.\nDétails : {e}"
-                self.root.after(0, self._handle_connection_error, error_msg)
+                self.offline_mode = True
+                self.root.after(0, self.show_login_screen)
         except Exception as e:
-            error_msg = f"Connexion Internet requise.\nDétails : {e}"
-            self.root.after(0, self._handle_connection_error, error_msg)
+            self.offline_mode = True
+            self.root.after(0, self.show_login_screen)
 
     def _handle_auto_update(self, new_version, update_url):
         """Show update loader, download new script, relaunch."""
@@ -1061,13 +1232,21 @@ class DiscordBumperApp:
         self.root.destroy()
         sys.exit(0)
 
+    def _compute_geometry(self):
+        """Compute the window height dynamically based on active panels."""
+        h = 560  # base height with multi-server checkbox row
+        if self.enable_multi_server_var.get():
+            h += 220
+        if self.show_scheduling_var.get():
+            h += 230
+        self.root.geometry(f"640x{h}")
+
     def toggle_scheduling_panel(self):
         if self.show_scheduling_var.get():
             self.sched_frame.pack(fill="x", padx=20, pady=10, before=self.btn_frame)
-            self.root.geometry("640x740")
         else:
             self.sched_frame.pack_forget()
-            self.root.geometry("640x510")
+        self._compute_geometry()
 
     def toggle_scheduling_fields(self):
         # Enable/disable interval controls based on the checkbox state
@@ -1084,6 +1263,84 @@ class DiscordBumperApp:
         daily_state = "normal" if self.enable_daily_var.get() else "disabled"
         self.daily_entry.config(state=daily_state)
 
+    def toggle_multi_server_panel(self):
+        if self.enable_multi_server_var.get():
+            self.multi_server_frame.pack(fill="x", padx=20, pady=10, before=self.show_sched_cb)
+        else:
+            self.multi_server_frame.pack_forget()
+        self._compute_geometry()
+
+    def add_server(self):
+        name = self.server_name_entry.get().strip()
+        if not name:
+            return
+        if name in self.server_list:
+            return  # Avoid duplicates
+        self.server_list.append(name)
+        self.server_name_entry.delete(0, "end")
+        self.refresh_server_list_ui()
+        self.server_name_entry.focus()
+
+    def remove_server(self, name):
+        if name in self.server_list:
+            self.server_list.remove(name)
+        self.refresh_server_list_ui()
+
+    def refresh_server_list_ui(self):
+        # Clear existing widgets
+        for widget in self.server_inner_frame.winfo_children():
+            widget.destroy()
+        
+        if not self.server_list:
+            tk.Label(
+                self.server_inner_frame,
+                text="  Aucun serveur ajouté. Tapez un nom ci-dessus et cliquez ➕",
+                font=("Segoe UI", 9, "italic"),
+                bg=self.input_bg,
+                fg="#72767d"
+            ).pack(anchor="w", padx=8, pady=10)
+            return
+        
+        for idx, server_name in enumerate(self.server_list):
+            row = tk.Frame(self.server_inner_frame, bg="#2b2d31" if idx % 2 == 0 else self.input_bg)
+            row.pack(fill="x", padx=4, pady=2)
+            
+            # Server number badge
+            tk.Label(
+                row,
+                text=f" {idx + 1}.",
+                font=("Consolas", 9, "bold"),
+                bg=row.cget("bg"),
+                fg=self.blurple_color,
+                width=4
+            ).pack(side="left")
+            
+            # Server name
+            tk.Label(
+                row,
+                text=server_name,
+                font=("Segoe UI", 10),
+                bg=row.cget("bg"),
+                fg=self.white_color,
+                anchor="w"
+            ).pack(side="left", fill="x", expand=True, padx=(4, 0))
+            
+            # Delete button
+            sn = server_name  # capture for closure
+            del_btn = tk.Button(
+                row,
+                text="❌",
+                font=("Segoe UI", 8),
+                bg=row.cget("bg"),
+                fg=self.red_color,
+                activebackground=self.red_color,
+                activeforeground=self.white_color,
+                bd=0,
+                cursor="hand2",
+                command=lambda s=sn: self.remove_server(s)
+            )
+            del_btn.pack(side="right", padx=4, pady=2)
+
     def set_gui_state(self, enabled):
         state = "normal" if enabled else "disabled"
         self.cmd_entry.config(state=state)
@@ -1091,13 +1348,20 @@ class DiscordBumperApp:
         self.show_sched_cb.config(state=state)
         self.interval_cb.config(state=state)
         self.daily_cb.config(state=state)
+        self.multi_server_cb.config(state=state)
         
         if enabled:
+            self.app_target_menu.config(state="readonly")
+            self.server_name_entry.config(state="normal")
+            self.add_server_btn.config(state="normal")
             self.toggle_scheduling_fields()
             self.run_btn.config(state="normal", text="🚀  DÉMARRER", bg=self.blurple_color)
             self.stop_btn.config(state="disabled", bg="#4e5058")
         else:
             # Force disable all inputs when running
+            self.app_target_menu.config(state="disabled")
+            self.server_name_entry.config(state="disabled")
+            self.add_server_btn.config(state="disabled")
             self.interval_spinbox.config(state="disabled")
             self.unit_option_menu.config(state="disabled")
             self.daily_entry.config(state="disabled")
@@ -1124,6 +1388,9 @@ class DiscordBumperApp:
             messagebox.showerror("Erreur de saisie", "Le nombre de bots doit être d'au moins 1.")
             return
 
+        # Save settings locally
+        self.save_settings()
+
         self.is_running = True
         self.stop_event.clear()
         self.set_gui_state(False)
@@ -1138,8 +1405,45 @@ class DiscordBumperApp:
         self.log("🛑 Demande d'arrêt envoyée... Clôture en cours.", "warning")
         self.stop_event.set()
 
+    def navigate_to_server(self, server_name):
+        self.log(f"🌐 Navigation vers le serveur : '{server_name}'...", "info")
+        # 1. Open Quick Switcher (Ctrl + K)
+        pyautogui.hotkey("ctrl", "k")
+        time.sleep(0.5)
+        
+        # 2. Clear anything in the quick switcher
+        pyautogui.hotkey("ctrl", "a")
+        time.sleep(0.1)
+        pyautogui.press("delete")
+        time.sleep(0.2)
+        
+        # 3. Write target search term (server name only)
+        search_query = server_name
+        try:
+            import pyperclip
+            old_clip = pyperclip.paste()
+            pyperclip.copy(search_query)
+            time.sleep(0.1)
+            pyautogui.hotkey("ctrl", "v")
+            time.sleep(0.3)
+            if old_clip:
+                pyperclip.copy(old_clip)
+        except Exception:
+            pyautogui.write(search_query, interval=0.04)
+            time.sleep(0.3)
+            
+        # 4. Wait for search results
+        time.sleep(0.8)
+        
+        # 5. Press Enter to confirm navigation
+        pyautogui.press("enter")
+        
+        # 6. Wait for Discord channel load
+        time.sleep(1.5)
+
     def execute_single_bump(self, command, bot_count):
-        self.log("Recherche de la fenêtre Discord...", "info")
+        target_app = self.app_target_var.get()
+        self.log(f"Recherche de la fenêtre pour {target_app}...", "info")
         hwnd_discord = None
         
         def enum_windows_callback(hwnd, extra):
@@ -1148,18 +1452,43 @@ class DiscordBumperApp:
                 return True
             if win32gui.IsWindowVisible(hwnd):
                 title = win32gui.GetWindowText(hwnd).lower()
-                # Find Discord window while excluding overlay and our control panel
-                if "discord" in title and "overlay" not in title and "control panel" not in title:
+                
+                # Check match based on selected target app
+                match = False
+                if target_app == "Discord (App)":
+                    if "discord" in title and "overlay" not in title and "control panel" not in title:
+                        # Exclude browsers in Discord App mode
+                        if not any(b in title for b in ["brave", "chrome", "firefox", "edge", "opera", "browser"]):
+                            match = True
+                elif target_app == "Brave":
+                    if "brave" in title:
+                        match = True
+                elif target_app == "Chrome":
+                    if "chrome" in title:
+                        match = True
+                elif target_app == "Firefox":
+                    if "firefox" in title:
+                        match = True
+                elif target_app == "Edge":
+                    if "edge" in title:
+                        match = True
+                        
+                if match:
                     hwnd_discord = hwnd
             return True
             
         win32gui.EnumWindows(enum_windows_callback, None)
         
         if not hwnd_discord:
-            self.log("❌ Fenêtre Discord introuvable. Veuillez vous assurer que Discord est lancé.", "error")
+            self.log(f"❌ Fenêtre {target_app} introuvable. Veuillez vous assurer que l'application est lancée.", "error")
             return False
 
-        self.log(f"Fenêtre Discord trouvée (HWND: {hwnd_discord}).", "success")
+        full_title = win32gui.GetWindowText(hwnd_discord)
+        self.log(f"Fenêtre {target_app} trouvée : '{full_title}' (HWND: {hwnd_discord}).", "success")
+        
+        # Friendly warning check for browser targeting
+        if target_app != "Discord (App)" and "discord" not in full_title.lower():
+            self.log(f"⚠️ Attention : L'onglet actif de {target_app} ne semble pas être Discord. Assurez-vous que l'onglet Discord est visible.", "warning")
         
         try:
             # Restore window if minimized
@@ -1188,77 +1517,104 @@ class DiscordBumperApp:
             pyautogui.click(click_x, click_y)
             time.sleep(0.5)
             
-            # Keystroke automation loop
-            for i in range(bot_count):
+            # Determine list of channels/servers to bump
+            multi_server_active = self.enable_multi_server_var.get()
+            targets = self.server_list if (multi_server_active and self.server_list) else [None]
+            
+            for target_idx, target_server in enumerate(targets):
                 if self.stop_event.is_set():
                     self.log("🛑 Exécution interrompue par l'utilisateur.", "warning")
                     return False
                     
-                bot_num = i + 1
-                self.log(f"🤖 [Bot {bot_num}/{bot_count}] Préparation...", "info")
+                if target_server:
+                    self.log(f"🌐 [Serveur {target_idx + 1}/{len(targets)}] Début de la séquence pour : {target_server}", "success")
+                    self.navigate_to_server(target_server)
+                    
+                    # Click inside chat area again after navigation to ensure focus
+                    pyautogui.click(click_x, click_y)
+                    time.sleep(0.5)
                 
-                # Clear chat (Ctrl+A then Delete)
-                pyautogui.hotkey("ctrl", "a")
-                time.sleep(0.1)
-                pyautogui.press("delete")
-                time.sleep(0.1)
-                
-                # Paste command via clipboard to avoid keyboard layout (AZERTY vs QWERTY) mismatch errors
-                self.log(f"🤖 [Bot {bot_num}/{bot_count}] Copie et collage de la commande...", "info")
-                try:
-                    import pyperclip
-                    # Backup old clipboard
-                    old_clipboard = pyperclip.paste()
-                    # Set command to clipboard
-                    pyperclip.copy(command)
-                    time.sleep(0.1)
-                    # Paste command using Ctrl+V
-                    pyautogui.hotkey("ctrl", "v")
-                    time.sleep(0.2)
-                    # Restore old clipboard
-                    if old_clipboard:
-                        pyperclip.copy(old_clipboard)
-                except Exception as e:
-                    self.log(f"⚠️ Erreur presse-papiers ({e}), repli sur la saisie manuelle...", "warning")
-                    pyautogui.write(command, interval=0.04)
-                
-                # Autocomplete wait (checking for stop_event periodically)
-                self.log(f"🤖 [Bot {bot_num}/{bot_count}] Attente de l'autocomplétion (1.5s)...", "info")
-                for _ in range(15):
+                # Keystroke automation loop for current channel
+                for i in range(bot_count):
                     if self.stop_event.is_set():
                         self.log("🛑 Exécution interrompue par l'utilisateur.", "warning")
                         return False
-                    time.sleep(0.1)
-                
-                # Navigate menu
-                if i > 0:
-                    self.log(f"🤖 [Bot {bot_num}/{bot_count}] Navigation : pressions sur Bas x {i}...", "info")
-                    for _ in range(i):
-                        if self.stop_event.is_set():
-                            self.log("🛑 Exécution interrompue par l'utilisateur.", "warning")
-                            return False
-                        pyautogui.press("down")
-                        time.sleep(0.1)
-                
-                # Validate selection
-                self.log(f"🤖 [Bot {bot_num}/{bot_count}] Validation avec Tab...", "info")
-                pyautogui.press("tab")
-                time.sleep(0.5)
-                
-                # Send command
-                self.log(f"🤖 [Bot {bot_num}/{bot_count}] Envoi de la commande avec Entrée !", "success")
-                pyautogui.press("enter")
-                
-                # Delay between bots
-                if i < bot_count - 1:
-                    delay = 3.0
-                    self.log(f"Délai d'attente anti-spam de {delay}s avant le bot suivant...", "system")
-                    for _ in range(int(delay * 10)):
-                        if self.stop_event.is_set():
-                            self.log("🛑 Exécution interrompue par l'utilisateur.", "warning")
-                            return False
-                        time.sleep(0.1)
                         
+                    bot_num = i + 1
+                    self.log(f"🤖 [Bot {bot_num}/{bot_count}] Préparation...", "info")
+                    
+                    # Clear chat (Ctrl+A then Delete)
+                    pyautogui.hotkey("ctrl", "a")
+                    time.sleep(0.1)
+                    pyautogui.press("delete")
+                    time.sleep(0.1)
+                    
+                    # Paste command via clipboard to avoid keyboard layout (AZERTY vs QWERTY) mismatch errors
+                    self.log(f"🤖 [Bot {bot_num}/{bot_count}] Copie et collage de la commande...", "info")
+                    try:
+                        import pyperclip
+                        # Backup old clipboard
+                        old_clipboard = pyperclip.paste()
+                        # Set command to clipboard
+                        pyperclip.copy(command)
+                        time.sleep(0.1)
+                        # Paste command using Ctrl+V
+                        pyautogui.hotkey("ctrl", "v")
+                        time.sleep(0.2)
+                        # Restore old clipboard
+                        if old_clipboard:
+                            pyperclip.copy(old_clipboard)
+                    except Exception as e:
+                        self.log(f"⚠️ Erreur presse-papiers ({e}), repli sur la saisie manuelle...", "warning")
+                        pyautogui.write(command, interval=0.04)
+                    
+                    # Autocomplete wait (checking for stop_event periodically)
+                    self.log(f"🤖 [Bot {bot_num}/{bot_count}] Attente de l'autocomplétion (1.5s)...", "info")
+                    for _ in range(15):
+                        if self.stop_event.is_set():
+                            self.log("🛑 Exécution interrompue par l'utilisateur.", "warning")
+                            return False
+                        time.sleep(0.1)
+                    
+                    # Navigate menu
+                    if i > 0:
+                        self.log(f"🤖 [Bot {bot_num}/{bot_count}] Navigation : pressions sur Bas x {i}...", "info")
+                        for _ in range(i):
+                            if self.stop_event.is_set():
+                                self.log("🛑 Exécution interrompue par l'utilisateur.", "warning")
+                                return False
+                            pyautogui.press("down")
+                            time.sleep(0.1)
+                    
+                    # Validate selection
+                    self.log(f"🤖 [Bot {bot_num}/{bot_count}] Validation avec Tab...", "info")
+                    pyautogui.press("tab")
+                    time.sleep(0.5)
+                    
+                    # Send command
+                    self.log(f"🤖 [Bot {bot_num}/{bot_count}] Envoi de la commande avec Entrée !", "success")
+                    pyautogui.press("enter")
+                    
+                    # Delay between bots
+                    if i < bot_count - 1:
+                        delay = 3.0
+                        self.log(f"Délai d'attente anti-spam de {delay}s avant le bot suivant...", "system")
+                        for _ in range(int(delay * 10)):
+                            if self.stop_event.is_set():
+                                self.log("🛑 Exécution interrompue par l'utilisateur.", "warning")
+                                return False
+                            time.sleep(0.1)
+                
+                # Cooldown between servers
+                if target_server and target_idx < len(targets) - 1:
+                    cooldown = 5.0
+                    self.log(f"⏳ Attente de {cooldown}s de sécurité avant le serveur suivant...", "system")
+                    for _ in range(int(cooldown * 10)):
+                        if self.stop_event.is_set():
+                            self.log("🛑 Exécution interrompue par l'utilisateur.", "warning")
+                            return False
+                        time.sleep(0.1)
+                            
             self.log("✅ Automatisation d'envoi terminée !", "success")
             return True
             

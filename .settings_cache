@@ -1,0 +1,16 @@
+{
+  "cmd": "/bump",
+  "bot_count": "2",
+  "target_app": "Brave",
+  "enable_multi_server": true,
+  "server_list": [
+    "canada meeting",
+    "canada discord"
+  ],
+  "show_scheduling": false,
+  "enable_interval": false,
+  "interval_val": "5",
+  "interval_unit": "Minutes",
+  "enable_daily": false,
+  "daily_times": "12:00, 18:30"
+}
