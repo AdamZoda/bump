@@ -38,7 +38,7 @@ except ImportError:
 #   "url_mise_a_jour": "https://github.com/..."
 # }
 CHECK_URL = "https://raw.githubusercontent.com/AdamZoda/bump/main/config.json"
-CURRENT_VERSION = "1.0.2"
+CURRENT_VERSION = "1.0.3"
 PASSWORD_HASH = "5fbde9bb9c3fd8c224020057695ac4664a3fa134bdcd4f0550e2fad2202a14bf" # sha256 of "bump"
 
 class DiscordBumperApp:
@@ -1214,10 +1214,28 @@ class DiscordBumperApp:
                 req = urllib.request.Request(update_url, headers={'User-Agent': 'BumperApp/1.0'})
                 with urllib.request.urlopen(req, timeout=30) as r:
                     new_code = r.read()
-                # Write new version
-                with open(script_path, 'wb') as f:
-                    f.write(new_code)
-                self.root.after(0, self._relaunch_app)
+                if getattr(sys, 'frozen', False):
+                    # Windows locks the running EXE, so replace it after this process exits.
+                    update_path = script_path + ".update"
+                    with open(update_path, 'wb') as f:
+                        f.write(new_code)
+                    relaunch_bat = os.path.join(self.base_dir, "bumper_update.bat")
+                    with open(relaunch_bat, "w", encoding="ascii") as f:
+                        f.write(
+                            '@echo off\n'
+                            'timeout /t 2 /nobreak >nul\n'
+                            f'copy /y "{update_path}" "{script_path}" >nul\n'
+                            f'start "" "{script_path}"\n'
+                            f'del /q "{update_path}"\n'
+                            'del /q "%~f0"\n'
+                        )
+                    subprocess.Popen(["cmd.exe", "/c", relaunch_bat],
+                                     creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                    self.root.after(0, self.root.destroy)
+                else:
+                    with open(script_path, 'wb') as f:
+                        f.write(new_code)
+                    self.root.after(0, self._relaunch_app)
             else:
                 # No URL — show message and exit so user can get it manually
                 self.root.after(0, self._handle_mandatory_update,
