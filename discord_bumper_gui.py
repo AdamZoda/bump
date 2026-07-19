@@ -38,7 +38,7 @@ except ImportError:
 #   "url_mise_a_jour": "https://github.com/..."
 # }
 CHECK_URL = "https://raw.githubusercontent.com/AdamZoda/bump/main/config.json"
-CURRENT_VERSION = "1.0.1"
+CURRENT_VERSION = "1.0.2"
 PASSWORD_HASH = "5fbde9bb9c3fd8c224020057695ac4664a3fa134bdcd4f0550e2fad2202a14bf" # sha256 of "bump"
 
 class DiscordBumperApp:
@@ -587,6 +587,31 @@ class DiscordBumperApp:
 
     def create_widgets(self):
         settings = self.load_settings()
+
+        # Keep the full interface reachable on short screens.
+        real_root = self.root
+        self.main_canvas = tk.Canvas(real_root, bg=self.bg_color, highlightthickness=0)
+        self.main_scrollbar = tk.Scrollbar(real_root, orient="vertical", command=self.main_canvas.yview)
+        self.main_canvas.configure(yscrollcommand=self.main_scrollbar.set)
+        self.main_scrollbar.pack(side="right", fill="y")
+        self.main_canvas.pack(side="left", fill="both", expand=True)
+        self.main_content = tk.Frame(self.main_canvas, bg=self.bg_color)
+        self.main_canvas_window = self.main_canvas.create_window(
+            (0, 0), window=self.main_content, anchor="nw"
+        )
+        self.main_content.bind(
+            "<Configure>",
+            lambda e: self.main_canvas.configure(scrollregion=self.main_canvas.bbox("all"))
+        )
+        self.main_canvas.bind(
+            "<Configure>",
+            lambda e: self.main_canvas.itemconfigure(self.main_canvas_window, width=e.width)
+        )
+        self.main_canvas.bind_all(
+            "<MouseWheel>",
+            lambda e: self.main_canvas.yview_scroll(int(-e.delta / 120), "units")
+        )
+        self.root = self.main_content
         
         # Header Label Frame
         header_frame = tk.Frame(self.root, bg=self.bg_color, pady=10)
@@ -1055,8 +1080,10 @@ class DiscordBumperApp:
             self.log("Console initialisée. Licence validée avec succès.", "success")
         
         # Restore toggle state after all widgets are packed
+        self.root = real_root
         self.toggle_multi_server_panel()
         self.toggle_scheduling_panel()
+        self.main_canvas.configure(scrollregion=self.main_canvas.bbox("all"))
 
     def log(self, message, msg_type="info"):
         timestamp = time.strftime("[%H:%M:%S] ")
