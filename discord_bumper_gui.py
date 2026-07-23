@@ -38,7 +38,7 @@ except ImportError:
 #   "url_mise_a_jour": "https://github.com/..."
 # }
 CHECK_URL = "https://raw.githubusercontent.com/AdamZoda/bump/main/config.json"
-CURRENT_VERSION = "1.0.3"
+CURRENT_VERSION = "1.0.4"
 PASSWORD_HASH = "5fbde9bb9c3fd8c224020057695ac4664a3fa134bdcd4f0550e2fad2202a14bf" # sha256 of "bump"
 
 class DiscordBumperApp:
@@ -469,6 +469,8 @@ class DiscordBumperApp:
         defaults = {
             "cmd": "/bump",
             "bot_count": "10",
+            "second_cmd": "/vote",
+            "second_bot_count": "5",
             "target_app": "Discord (App)",
             "enable_multi_server": False,
             "server_list": [],
@@ -493,6 +495,8 @@ class DiscordBumperApp:
             data = {
                 "cmd": self.cmd_entry.get().strip(),
                 "bot_count": self.count_spinbox.get().strip(),
+                "second_cmd": self.second_cmd_entry.get().strip(),
+                "second_bot_count": self.second_count_spinbox.get().strip(),
                 "target_app": self.app_target_var.get(),
                 "enable_multi_server": self.enable_multi_server_var.get(),
                 "server_list": list(self.server_list),
@@ -724,9 +728,69 @@ class DiscordBumperApp:
         self.count_spinbox.insert(0, settings.get("bot_count", "10"))
         self.count_spinbox.grid(row=1, column=1, padx=15, pady=(0, 12), ipady=5, sticky="we")
 
+        # Second Command Input Field
+        second_cmd_label_frame = tk.Frame(settings_frame, bg=self.card_color)
+        second_cmd_label_frame.grid(row=2, column=0, padx=15, pady=(4, 4), sticky="w")
+        
+        tk.Label(
+            second_cmd_label_frame, 
+            text="Commande slash 2 :", 
+            font=("Segoe UI", 10, "bold"), 
+            bg=self.card_color, 
+            fg=self.text_color
+        ).pack(anchor="w")
+        
+        self.second_cmd_entry = tk.Entry(
+            settings_frame, 
+            font=("Segoe UI", 11), 
+            bg=self.input_bg, 
+            fg=self.white_color, 
+            insertbackground=self.white_color,
+            bd=0, 
+            highlightthickness=1, 
+            highlightbackground="#1e1f22", 
+            highlightcolor=self.blurple_color,
+            disabledbackground="#2b2d31",
+            disabledforeground="#72767d"
+        )
+        self.second_cmd_entry.insert(0, settings.get("second_cmd", "/vote"))
+        self.second_cmd_entry.grid(row=3, column=0, padx=15, pady=(0, 12), ipady=6, sticky="we")
+        
+        # Second Bot Count Input Field
+        second_count_label_frame = tk.Frame(settings_frame, bg=self.card_color)
+        second_count_label_frame.grid(row=2, column=1, padx=15, pady=(4, 4), sticky="w")
+        
+        tk.Label(
+            second_count_label_frame, 
+            text="Nombre de votes :", 
+            font=("Segoe UI", 10, "bold"), 
+            bg=self.card_color, 
+            fg=self.text_color
+        ).pack(anchor="w")
+        
+        self.second_count_spinbox = tk.Spinbox(
+            settings_frame, 
+            from_=0, 
+            to=100, 
+            font=("Segoe UI", 11), 
+            bg=self.input_bg, 
+            fg=self.white_color, 
+            insertbackground=self.white_color,
+            buttonbackground="#2b2d31",
+            bd=0, 
+            highlightthickness=1, 
+            highlightbackground="#1e1f22", 
+            highlightcolor=self.blurple_color,
+            disabledbackground="#2b2d31",
+            disabledforeground="#72767d"
+        )
+        self.second_count_spinbox.delete(0, "end")
+        self.second_count_spinbox.insert(0, settings.get("second_bot_count", "5"))
+        self.second_count_spinbox.grid(row=3, column=1, padx=15, pady=(0, 12), ipady=5, sticky="we")
+
         # Target App Selection Field
         app_label_frame = tk.Frame(settings_frame, bg=self.card_color)
-        app_label_frame.grid(row=2, column=0, columnspan=2, padx=15, pady=(4, 4), sticky="w")
+        app_label_frame.grid(row=4, column=0, columnspan=2, padx=15, pady=(4, 4), sticky="w")
         
         tk.Label(
             app_label_frame, 
@@ -762,7 +826,7 @@ class DiscordBumperApp:
             state="readonly", 
             style="TCombobox"
         )
-        self.app_target_menu.grid(row=3, column=0, columnspan=2, padx=15, pady=(0, 12), ipady=5, sticky="we")
+        self.app_target_menu.grid(row=5, column=0, columnspan=2, padx=15, pady=(0, 12), ipady=5, sticky="we")
 
         # ── Multi-Server Section ──────────────────────────────────────────────
         self.server_list = list(settings.get("server_list", []))
@@ -1390,6 +1454,8 @@ class DiscordBumperApp:
         state = "normal" if enabled else "disabled"
         self.cmd_entry.config(state=state)
         self.count_spinbox.config(state=state)
+        self.second_cmd_entry.config(state=state)
+        self.second_count_spinbox.config(state=state)
         self.show_sched_cb.config(state=state)
         self.interval_cb.config(state=state)
         self.daily_cb.config(state=state)
@@ -1419,10 +1485,16 @@ class DiscordBumperApp:
             return
             
         cmd = self.cmd_entry.get().strip()
+        second_cmd = self.second_cmd_entry.get().strip()
         try:
             bot_count = int(self.count_spinbox.get().strip())
         except ValueError:
             messagebox.showerror("Erreur de saisie", "Le nombre de bots doit être un entier valide.")
+            return
+        try:
+            second_bot_count = int(self.second_count_spinbox.get().strip())
+        except ValueError:
+            messagebox.showerror("Erreur de saisie", "Le nombre de votes doit être un entier valide.")
             return
             
         if not cmd:
@@ -1433,15 +1505,27 @@ class DiscordBumperApp:
             messagebox.showerror("Erreur de saisie", "Le nombre de bots doit être d'au moins 1.")
             return
 
+        if second_bot_count < 0:
+            messagebox.showerror("Erreur de saisie", "Le nombre de votes ne peut pas être négatif.")
+            return
+
+        if second_bot_count > 0 and not second_cmd:
+            messagebox.showerror("Erreur de saisie", "La commande slash 2 ne peut pas être vide si le nombre de votes est supérieur à 0.")
+            return
+
         # Save settings locally
         self.save_settings()
+
+        command_runs = [(cmd, bot_count)]
+        if second_cmd and second_bot_count > 0:
+            command_runs.append((second_cmd, second_bot_count))
 
         self.is_running = True
         self.stop_event.clear()
         self.set_gui_state(False)
         
         # Start execution thread
-        self.worker_thread = threading.Thread(target=self.run_bump_process, args=(cmd, bot_count), daemon=True)
+        self.worker_thread = threading.Thread(target=self.run_bump_process, args=(command_runs,), daemon=True)
         self.worker_thread.start()
 
     def stop_automation(self):
@@ -1486,7 +1570,7 @@ class DiscordBumperApp:
         # 6. Wait for Discord channel load
         time.sleep(1.5)
 
-    def execute_single_bump(self, command, bot_count):
+    def execute_single_bump(self, command_runs):
         target_app = self.app_target_var.get()
         self.log(f"Recherche de la fenêtre pour {target_app}...", "info")
         hwnd_discord = None
@@ -1579,77 +1663,88 @@ class DiscordBumperApp:
                     pyautogui.click(click_x, click_y)
                     time.sleep(0.5)
                 
-                # Keystroke automation loop for current channel
-                for i in range(bot_count):
-                    if self.stop_event.is_set():
-                        self.log("🛑 Exécution interrompue par l'utilisateur.", "warning")
-                        return False
-                        
-                    bot_num = i + 1
-                    self.log(f"🤖 [Bot {bot_num}/{bot_count}] Préparation...", "info")
-                    
-                    # Clear chat (Ctrl+A then Delete)
-                    pyautogui.hotkey("ctrl", "a")
-                    time.sleep(0.1)
-                    pyautogui.press("delete")
-                    time.sleep(0.1)
-                    
-                    # Paste command via clipboard to avoid keyboard layout (AZERTY vs QWERTY) mismatch errors
-                    self.log(f"🤖 [Bot {bot_num}/{bot_count}] Copie et collage de la commande...", "info")
-                    try:
-                        import pyperclip
-                        # Backup old clipboard
-                        old_clipboard = pyperclip.paste()
-                        # Set command to clipboard
-                        pyperclip.copy(command)
-                        time.sleep(0.1)
-                        # Paste command using Ctrl+V
-                        pyautogui.hotkey("ctrl", "v")
-                        time.sleep(0.2)
-                        # Restore old clipboard
-                        if old_clipboard:
-                            pyperclip.copy(old_clipboard)
-                    except Exception as e:
-                        self.log(f"⚠️ Erreur presse-papiers ({e}), repli sur la saisie manuelle...", "warning")
-                        pyautogui.write(command, interval=0.04)
-                    
-                    # Autocomplete wait (checking for stop_event periodically)
-                    self.log(f"🤖 [Bot {bot_num}/{bot_count}] Attente de l'autocomplétion (1.5s)...", "info")
-                    for _ in range(15):
+                # Keystroke automation loop for each configured command in the current channel.
+                for command_idx, (command, bot_count) in enumerate(command_runs):
+                    self.log(f"▶️ Commande {command_idx + 1}/{len(command_runs)} : {command} x{bot_count}", "system")
+
+                    for i in range(bot_count):
                         if self.stop_event.is_set():
                             self.log("🛑 Exécution interrompue par l'utilisateur.", "warning")
                             return False
+
+                        bot_num = i + 1
+                        self.log(f"🤖 [{command} {bot_num}/{bot_count}] Préparation...", "info")
+
+                        # Clear chat (Ctrl+A then Delete)
+                        pyautogui.hotkey("ctrl", "a")
                         time.sleep(0.1)
-                    
-                    # Navigate menu
-                    if i > 0:
-                        self.log(f"🤖 [Bot {bot_num}/{bot_count}] Navigation : pressions sur Bas x {i}...", "info")
-                        for _ in range(i):
+                        pyautogui.press("delete")
+                        time.sleep(0.1)
+
+                        # Paste command via clipboard to avoid keyboard layout (AZERTY vs QWERTY) mismatch errors
+                        self.log(f"🤖 [{command} {bot_num}/{bot_count}] Copie et collage de la commande...", "info")
+                        try:
+                            import pyperclip
+                            # Backup old clipboard
+                            old_clipboard = pyperclip.paste()
+                            # Set command to clipboard
+                            pyperclip.copy(command)
+                            time.sleep(0.1)
+                            # Paste command using Ctrl+V
+                            pyautogui.hotkey("ctrl", "v")
+                            time.sleep(0.2)
+                            # Restore old clipboard
+                            if old_clipboard:
+                                pyperclip.copy(old_clipboard)
+                        except Exception as e:
+                            self.log(f"⚠️ Erreur presse-papiers ({e}), repli sur la saisie manuelle...", "warning")
+                            pyautogui.write(command, interval=0.04)
+
+                        # Autocomplete wait (checking for stop_event periodically)
+                        self.log(f"🤖 [{command} {bot_num}/{bot_count}] Attente de l'autocomplétion (1.5s)...", "info")
+                        for _ in range(15):
                             if self.stop_event.is_set():
                                 self.log("🛑 Exécution interrompue par l'utilisateur.", "warning")
                                 return False
-                            pyautogui.press("down")
                             time.sleep(0.1)
-                    
-                    # Validate selection
-                    self.log(f"🤖 [Bot {bot_num}/{bot_count}] Validation avec Tab...", "info")
-                    pyautogui.press("tab")
-                    time.sleep(0.5)
-                    
-                    # Send command
-                    self.log(f"🤖 [Bot {bot_num}/{bot_count}] Envoi de la commande avec Entrée !", "success")
-                    pyautogui.press("enter")
-                    
-                    # Delay between bots
-                    if i < bot_count - 1:
+
+                        # Navigate menu
+                        if i > 0:
+                            self.log(f"🤖 [{command} {bot_num}/{bot_count}] Navigation : pressions sur Bas x {i}...", "info")
+                            for _ in range(i):
+                                if self.stop_event.is_set():
+                                    self.log("🛑 Exécution interrompue par l'utilisateur.", "warning")
+                                    return False
+                                pyautogui.press("down")
+                                time.sleep(0.1)
+
+                        # Validate selection
+                        self.log(f"🤖 [{command} {bot_num}/{bot_count}] Validation avec Tab...", "info")
+                        pyautogui.press("tab")
+                        time.sleep(0.5)
+
+                        # Send command
+                        self.log(f"🤖 [{command} {bot_num}/{bot_count}] Envoi de la commande avec Entrée !", "success")
+                        pyautogui.press("enter")
+
+                        # Delay between command executions
+                        if i < bot_count - 1:
+                            delay = 3.0
+                            self.log(f"Délai d'attente anti-spam de {delay}s avant l'exécution suivante...", "system")
+                            for _ in range(int(delay * 10)):
+                                if self.stop_event.is_set():
+                                    self.log("🛑 Exécution interrompue par l'utilisateur.", "warning")
+                                    return False
+                                time.sleep(0.1)
+
+                    if command_idx < len(command_runs) - 1:
                         delay = 3.0
-                        self.log(f"Délai d'attente anti-spam de {delay}s avant le bot suivant...", "system")
+                        self.log(f"⏳ Attente de {delay}s avant la commande suivante...", "system")
                         for _ in range(int(delay * 10)):
                             if self.stop_event.is_set():
                                 self.log("🛑 Exécution interrompue par l'utilisateur.", "warning")
                                 return False
                             time.sleep(0.1)
-                
                 # Cooldown between servers
                 if target_server and target_idx < len(targets) - 1:
                     cooldown = 5.0
@@ -1667,7 +1762,7 @@ class DiscordBumperApp:
             self.log(f"❌ Erreur lors de l'exécution physique : {e}", "error")
             return False
 
-    def run_bump_process(self, command, bot_count):
+    def run_bump_process(self, command_runs):
         # Read the scheduling panel state first
         show_scheduling = self.show_scheduling_var.get()
         use_interval = self.enable_interval_var.get() if show_scheduling else False
@@ -1727,7 +1822,7 @@ class DiscordBumperApp:
 
         # 1. Single run mode (if no scheduling is active)
         if not use_interval and not use_daily:
-            self.execute_single_bump(command, bot_count)
+            self.execute_single_bump(command_runs)
             self.is_running = False
             self.root.after(0, lambda: self.set_gui_state(True))
             return
@@ -1739,7 +1834,7 @@ class DiscordBumperApp:
         next_interval_run = 0
         if use_interval:
             self.log("🔄 [Planificateur] Lancement immédiat de la première boucle d'intervalle...", "success")
-            self.execute_single_bump(command, bot_count)
+            self.execute_single_bump(command_runs)
             next_interval_run = time.time() + interval_seconds
             
         last_logged_rem = -1
@@ -1758,7 +1853,7 @@ class DiscordBumperApp:
                     key = f"{current_date_str}_{target_time}"
                     if current_time_str == target_time and key not in last_daily_runs:
                         self.log(f"⏰ [Planificateur] Heure programmée atteinte ({target_time}). Lancement...", "success")
-                        self.execute_single_bump(command, bot_count)
+                        self.execute_single_bump(command_runs)
                         last_daily_runs[key] = True
                         break # Break inner loop, continue checking
             
@@ -1766,7 +1861,7 @@ class DiscordBumperApp:
             if use_interval:
                 if now >= next_interval_run:
                     self.log("🔄 [Planificateur] Intervalle expiré. Lancement de la boucle...", "success")
-                    self.execute_single_bump(command, bot_count)
+                    self.execute_single_bump(command_runs)
                     next_interval_run = time.time() + interval_seconds
                     last_logged_rem = -1
                 else:
